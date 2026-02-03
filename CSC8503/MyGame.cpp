@@ -121,7 +121,7 @@ void MyGame::InitWorld() {
 GameObject* MyGame::AddFloorToWorld(const Vector3& position) {
     GameObject* floor = new GameObject("Floor");
 
-    Vector3 floorHalfSize = Vector3(50, 1, 50);
+    Vector3 floorHalfSize = Vector3(200, 1, 200);
     AABBVolume* volume = new AABBVolume(floorHalfSize);
     floor->SetBoundingVolume(volume);
 
