@@ -17,9 +17,9 @@ namespace NCL::CSC8503 {
         NCL::Maths::Vector3 axis = NCL::Maths::Vector3(0, 0, 0);
         bool jump = false;
 
-        // polarity pulse triggers (momentary)
-        bool pulseSouth = false; // LMB
-        bool pulseNorth = false; // RMB
+        // polarity hold (while pressed)
+        bool holdSouth = false; // LMB
+        bool holdNorth = false; // RMB
 
         float cameraYaw = 0.0f;
     };
@@ -36,9 +36,9 @@ namespace NCL::CSC8503 {
         bool GetIgnoreInput() const { return ignoreInput; }
         void SetPlayerInput(const PlayerInputs& inputs) { currentInputs = inputs; }
 
-        // Polarity pulse
-        bool     IsPolarityPulseActive() const { return polarityPulseTimer > 0.0f; }
-        Polarity GetPolarityPulse() const { return IsPolarityPulseActive() ? polarityPulse : Polarity::None; }
+        // Polarity (hold)
+        bool     IsPolarityPulseActive() const { return polarityState != Polarity::None; }
+        Polarity GetPolarityPulse() const { return polarityState; }
 
         // Magnet helpers
         NCL::Maths::Vector3 GetMagnetOrigin();  // non-const to avoid const-correctness issues in your engine
@@ -47,14 +47,17 @@ namespace NCL::CSC8503 {
     private:
         void PlayerControl(float dt);
         bool IsPlayerOnGround();               // non-const (Raycast ignore expects GameObject*)
-        void TriggerPolarityPulse(Polarity p);
+        
+        void SetPolarityState(Polarity p);
 
         void ReadLocalInput();                 // fills currentInputs
+		void SelectCandicatesForLockOn();
 
     private:
         GameWorld* gameWorld = nullptr;
 
         bool ignoreInput = false;
+        bool lockModeHeld = false;
         PlayerInputs currentInputs;
 
         // movement tuning
@@ -63,9 +66,7 @@ namespace NCL::CSC8503 {
         float rotationSpeed = 10.0f;
         float jumpImpulse = 15.0f;
 
-        // polarity pulse tuning
-        Polarity polarityPulse = Polarity::None;
-        float    polarityPulseTimer = 0.0f;
-        float    polarityPulseDuration = 0.08f; // “一瞬间”，可改为 0.02f 更短
+        // polarity state (hold)
+        Polarity polarityState = Polarity::None;
     };
 }
