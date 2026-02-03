@@ -161,7 +161,7 @@ Vector3 Player::GetAimForward() {
 }
 
 /*struct Candidate {
-    GameObject* obj;
+	GameObject* obj; // 候选目标
     float centerError;   // 越小越靠近屏幕中心
     float distPlayer;    // 越小越近
     float score;         // 综合排序
