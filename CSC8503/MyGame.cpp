@@ -1,5 +1,5 @@
 #include "MyGame.h"
-
+#include "MetalObject.h"
 #include "GameWorld.h"
 #include "PhysicsSystem.h"
 #include "PhysicsObject.h"
@@ -37,7 +37,7 @@ MyGame::MyGame(GameWorld& inWorld, GameTechRendererInterface& inRenderer, Physic
 
     // assets
     cubeMesh = renderer.LoadMesh("cube.msh");
-    playerMesh = renderer.LoadMesh("goat.msh");
+    playerMesh = renderer.LoadMesh("cat.msh");
     defaultTex = renderer.LoadTexture("checkerboard.png");
     notexMaterial = GameTechMaterial();
 
@@ -90,6 +90,8 @@ void MyGame::InitWorld() {
 
     // Player
     player = AddPlayerToWorld(Vector3(0, 3, 0), 2.0f, 0.5f);
+    // Let Player do pre-lock selection on our metal list
+    player->SetMetalObjects(&metalObjects);
 
     // Example: place multiple metal objects
     // inverseMass == 0 => immovable "anchor" you can pull yourself to
@@ -134,12 +136,12 @@ Player* MyGame::AddPlayerToWorld(const Vector3& position, float radius, float in
         .SetPosition(position);
 
     p->SetRenderObject(new RenderObject(p->GetTransform(), playerMesh, notexMaterial));
-    p->GetRenderObject()->SetColour(Vector4(0.9f, 0.9f, 0.9f, 1.0f));
+    p->GetRenderObject()->SetColour(Vector4(0,1,1,1));
 
     PhysicsObject* po = new PhysicsObject(p->GetTransform(), p->GetBoundingVolume());
     po->SetInverseMass(inverseMass);
     po->InitSphereInertia();
-    po->SetElasticity(0.0f);
+    po->SetElasticity(0.0f); // no bounciness
 
     p->SetPhysicsObject(po);
 
@@ -242,33 +244,10 @@ void MyGame::ApplyPullPush(Player* p) {
     if (metalObjects.empty()) return;
 
     Vector3 origin = p->GetMagnetOrigin();
-    Vector3 aimFwd = Vector::Normalise(p->GetAimForward());
-
-    // Pick best target: nearest metal within range + in-front cone
-    MetalObject* bestObj = nullptr;
-    float bestDist = 1e9f;
-
-    for (MetalObject* obj : metalObjects) {
-        if (!obj) continue;
-
-        Vector3 objPos = obj->GetTransform().GetPosition();
-        Vector3 toObj = objPos - origin;
-        float dist = Vector::Length(toObj);
-        if (dist <= 0.0001f) continue;
-
-        if (dist > interactRange) continue;
-
-        Vector3 dirToObj = toObj / dist;
-        float facing = Vector::Dot(dirToObj, aimFwd);
-        if (facing < interactConeDot) continue;
-
-        if (dist < bestDist) {
-            bestDist = dist;
-            bestObj = obj;
-        }
-    }
-
+    // Use player's pre-lock / hard-lock target instead of re-selecting here
+    MetalObject* bestObj = p->GetActiveTarget();
     if (!bestObj) return;
+
 
     PhysicsObject* objPhys = bestObj->GetPhysicsObject();
     PhysicsObject* playerPhys = p->GetPhysicsObject();
@@ -278,6 +257,8 @@ void MyGame::ApplyPullPush(Player* p) {
     Vector3 toObj = objPos - origin;
     float dist = Vector::Length(toObj);
     if (dist <= 0.0001f) return;
+    if (dist > interactRange) return;
+    if (dist > interactRange) return;
     Vector3 dirToObj = toObj / dist;
 
     // Pull => bring together (object towards player, player towards object)

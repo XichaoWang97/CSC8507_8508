@@ -1,4 +1,4 @@
-#include "Player.h"
+﻿#include "Player.h"
 #include "GameWorld.h"
 #include "PhysicsObject.h"
 #include "Ray.h"
@@ -24,8 +24,36 @@ void Player::Update(float dt) {
     }
 
     // select lock-on candidates (optional debug / future feature)
-    if (lockModeHeld) {
-        SelectCandicatesForLockOn();
+    if (currentInputs.toggleHardLockPressed) {
+        if (lockMode == LockMode::HardLock) {
+            lockMode = LockMode::PreLock;
+            hardTarget = nullptr;
+        }
+        else {
+            lockMode = LockMode::HardLock;
+            hardTarget = preTarget; 
+        }
+    }
+
+	// only one of pull/push can be active
+    if (lockMode == LockMode::PreLock) {
+        preTarget = SelectBestPreTarget();
+    }
+
+    GameObject* active =
+        (lockMode == LockMode::HardLock && hardTarget) ? hardTarget : preTarget;
+
+	Vector3 player_position = GetTransform().GetPosition();
+
+	// Debug lines to targets
+	if (preTarget)  {
+		Vector3 pos = preTarget->GetTransform().GetPosition();
+        Debug::DrawLine(player_position, pos, Vector4(1.0f, 0.55f, 0.0f, 0.25f)); // orange for pre-target
+    }
+
+    if (hardTarget) {
+        Vector3 pos = hardTarget->GetTransform().GetPosition();
+        Debug::DrawLine(player_position, pos, Vector4(1.0f, 0.55f, 0.0f, 0.75f));
     }
 
     PlayerControl(dt);
@@ -56,13 +84,8 @@ void Player::ReadLocalInput() {
         currentInputs.pushHeld = true;
     }
 
-    // Optional: hold ALT to enter "selection mode" (stub for now)
-    if (Window::GetKeyboard()->KeyDown(KeyCodes::LMENU)) {
-        lockModeHeld = true;
-    }
-    else {
-        lockModeHeld = false;
-    }
+	// F: toggle lock-on mode
+    if (Window::GetKeyboard()->KeyPressed(KeyCodes::F)) currentInputs.toggleHardLockPressed = true;
 }
 
 void Player::PlayerControl(float dt) {
@@ -130,9 +153,54 @@ Vector3 Player::GetAimForward() {
     return q * Vector3(0, 0, 1);
 }
 
-void Player::SelectCandicatesForLockOn() {
-    // Stub: keep empty for now (prevents linker error).
-    // You can later implement:
-    //  - gather visible MetalObjects in front of camera
-    //  - sort by screen center distance then by player distance
+// select best pre-target based on camera position/direction
+MetalObject* Player::SelectBestPreTarget() {
+    auto& cam = gameWorld->GetMainCamera();
+    Vector3 camPos = cam.GetPosition();
+    Vector3 camFwd = Vector::Normalise(cam.GetForwardVector());
+    Vector3 playerPos = transform.GetPosition();
+
+    MetalObject* best = nullptr;
+    float bestCenter = 1e9f;
+    float bestDist = 1e9f;
+
+	if (!metalObjects) return nullptr;
+
+	for (MetalObject* obj : *metalObjects) { // list of potential targets
+        if (!obj) continue;
+
+        Vector3 objPos = obj->GetTransform().GetPosition();
+        Vector3 toObj = objPos - camPos;
+        float distCam = Vector::Length(toObj);
+        if (distCam < 0.01f || distCam > lockRadius) continue;
+
+        Vector3 dir = toObj / distCam;
+        float dot = Vector::Dot(camFwd, dir);
+        if (dot < minFacingDot) continue;
+
+        float centerError = 1.0f - dot;
+        float distPlayer = Vector::Length((objPos - playerPos));
+
+        // Optional: line-of-sight check (avoid locking through walls)
+        Ray ray(camPos, dir);
+        RayCollision hit;
+        if (gameWorld->Raycast(ray, hit, true, this)) {
+            // If the first thing we hit isn't the candidate object, skip it
+            if (hit.node != obj) {
+                continue;
+            }
+        }
+
+		// best candidate selection
+        bool better = false;
+        if (centerError + centerTieEps < bestCenter) better = true;
+        else if (fabs(centerError - bestCenter) <= centerTieEps && distPlayer < bestDist) better = true;
+
+        if (better) {
+            best = obj;
+            bestCenter = centerError;
+            bestDist = distPlayer;
+        }
+    }
+    return best;
 }

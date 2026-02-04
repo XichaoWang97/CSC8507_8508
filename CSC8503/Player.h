@@ -1,20 +1,22 @@
-#pragma once
+﻿#pragma once
+#include <vector>                 // 记得要有
 #include "GameObject.h"
 #include "Window.h"
 #include "RenderObject.h"
+#include "MetalObject.h"
 
 namespace NCL::CSC8503 {
 
     class GameWorld;
 
+    enum class LockMode { PreLock, HardLock };
+
     struct PlayerInputs {
         NCL::Maths::Vector3 axis = NCL::Maths::Vector3(0, 0, 0);
         bool jump = false;
-
-        // Magnet interaction (hold while pressed)
-        bool pullHeld = false; // LMB
-        bool pushHeld = false; // RMB
-
+        bool pullHeld = false;
+        bool pushHeld = false;
+        bool toggleHardLockPressed = false;
         float cameraYaw = 0.0f;
     };
 
@@ -25,38 +27,48 @@ namespace NCL::CSC8503 {
 
         void Update(float dt);
 
-        // For networked mode (optional)
         void SetIgnoreInput(bool ignore) { ignoreInput = ignore; }
         bool GetIgnoreInput() const { return ignoreInput; }
         void SetPlayerInput(const PlayerInputs& inputs) { currentInputs = inputs; }
 
-        // Magnet helpers
+        void SetMetalObjects(const std::vector<MetalObject*>* list) { metalObjects = list; }
+
+        MetalObject* GetActiveTarget() const {
+            return (lockMode == LockMode::HardLock && hardTarget) ? hardTarget : preTarget;
+        }
+
         bool IsPullHeld() const { return currentInputs.pullHeld; }
         bool IsPushHeld() const { return currentInputs.pushHeld; }
 
-        NCL::Maths::Vector3 GetMagnetOrigin();  // non-const to avoid const-correctness issues in your engine
+        NCL::Maths::Vector3 GetMagnetOrigin();
         NCL::Maths::Vector3 GetAimForward();
 
     private:
         void PlayerControl(float dt);
-        bool IsPlayerOnGround();               // non-const (Raycast ignore expects GameObject*)
-
-        void ReadLocalInput();                 // fills currentInputs
-
-        // Lock-on (you can flesh this out later; keeping a stub prevents linker errors)
-        void SelectCandicatesForLockOn();
+        bool IsPlayerOnGround();
+        void ReadLocalInput();
+        MetalObject* SelectBestPreTarget();
 
     private:
         GameWorld* gameWorld = nullptr;
-
         bool ignoreInput = false;
-        bool lockModeHeld = false;
         PlayerInputs currentInputs;
 
-        // movement tuning
+        // ✅ 这些都应该是成员变量，不要放到 class 外面
+        LockMode lockMode = LockMode::PreLock;
+        MetalObject* preTarget = nullptr;
+        MetalObject* hardTarget = nullptr;
+
+        float lockRadius = 40.0f;
+        float minFacingDot = 0.15f;
+        float centerTieEps = 0.02f;
+
+        const std::vector<MetalObject*>* metalObjects = nullptr;
+
         float moveForce = 60.0f;
         float maxSpeed = 15.0f;
         float rotationSpeed = 10.0f;
-        float jumpImpulse = 15.0f;
+        float jumpImpulse = 30.0f;
     };
+
 }
