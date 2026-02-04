@@ -23,35 +23,28 @@ void Player::Update(float dt) {
         ReadLocalInput();
     }
 
+    
+
     // select lock-on candidates (optional debug / future feature)
     if (currentInputs.toggleHardLockPressed) {
-        if (lockMode == LockMode::HardLock) {
-            lockMode = LockMode::PreLock;
-            hardTarget = nullptr;
-        }
-        else {
-            lockMode = LockMode::HardLock;
-            hardTarget = preTarget; 
-        }
+        lockMode = LockMode::HardLock;
+		hardTarget = preTarget;
     }
-
-	// only one of pull/push can be active
-    if (lockMode == LockMode::PreLock) {
-        preTarget = SelectBestPreTarget();
+    else {
+        lockMode = LockMode::PreLock;
+		preTarget = SelectBestPreTarget(); // always update pre-target
+		hardTarget = nullptr;
     }
-
-    GameObject* active =
-        (lockMode == LockMode::HardLock && hardTarget) ? hardTarget : preTarget;
 
 	Vector3 player_position = GetTransform().GetPosition();
 
 	// Debug lines to targets
-	if (preTarget)  {
+	if (lockMode == LockMode::PreLock)  {
 		Vector3 pos = preTarget->GetTransform().GetPosition();
         Debug::DrawLine(player_position, pos, Vector4(1.0f, 0.55f, 0.0f, 0.25f)); // orange for pre-target
     }
 
-    if (hardTarget) {
+    if (lockMode == LockMode::HardLock) {
         Vector3 pos = hardTarget->GetTransform().GetPosition();
         Debug::DrawLine(player_position, pos, Vector4(1.0f, 0.55f, 0.0f, 0.75f));
     }
@@ -85,7 +78,7 @@ void Player::ReadLocalInput() {
     }
 
 	// F: toggle lock-on mode
-    if (Window::GetKeyboard()->KeyPressed(KeyCodes::F)) currentInputs.toggleHardLockPressed = true;
+    if (Window::GetKeyboard()->KeyPressed(KeyCodes::F)) currentInputs.toggleHardLockPressed = !currentInputs.toggleHardLockPressed;
 }
 
 void Player::PlayerControl(float dt) {

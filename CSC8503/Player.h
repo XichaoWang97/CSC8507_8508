@@ -54,7 +54,6 @@ namespace NCL::CSC8503 {
         bool ignoreInput = false;
         PlayerInputs currentInputs;
 
-        // ✅ 这些都应该是成员变量，不要放到 class 外面
         LockMode lockMode = LockMode::PreLock;
         MetalObject* preTarget = nullptr;
         MetalObject* hardTarget = nullptr;
