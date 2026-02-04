@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Player.h"
+#include "MetalObject.h"
 #include "RenderObject.h"
 #include <vector>
 
@@ -31,41 +32,35 @@ namespace NCL {
             void InitWorld();
 
             // Level building
-            GameObject* AddFloorToWorld(const NCL::Maths::Vector3& position);
-            Player* AddPlayerToWorld(const NCL::Maths::Vector3& position, float radius, float inverseMass);
-            GameObject* AddMagneticCubeToWorld(const NCL::Maths::Vector3& position,
+            GameObject*   AddFloorToWorld(const NCL::Maths::Vector3& position);
+            Player*       AddPlayerToWorld(const NCL::Maths::Vector3& position, float radius, float inverseMass);
+
+            // Pullable / pushable objects
+            MetalObject*  AddMetalCubeToWorld(const NCL::Maths::Vector3& position,
                 const NCL::Maths::Vector3& halfDims,
-                float inverseMass,
-                Polarity polarity);
+                float inverseMass);
 
-            GameObject* AddOBBCubeToWorld(const NCL::Maths::Vector3& position, NCL::Maths::Vector3 dimensions, 
-                float inverseMass, Polarity polarity);
+            MetalObject*  AddMetalOBBCubeToWorld(const NCL::Maths::Vector3& position,
+                NCL::Maths::Vector3 dimensions,
+                float inverseMass);
 
-            // Camera follow logic (kept as requested)
+            // Camera follow logic
             void SetCameraToPlayer(Player* player);
 
-            // Magnet interaction (MVP)
-            void ApplyMagnetPulse(Player* player, float dt);
+            // Pull / Push interaction (MVP)
+            void ApplyPullPush(Player* player);
 
         private:
-
-            struct MagneticEntry {
-                GameObject* obj = nullptr;
-                Polarity polarity = Polarity::None;
-            };
-
             GameWorld& world;
             GameTechRendererInterface& renderer;
             PhysicsSystem& physics;
 
             Controller* controller = nullptr;
 
-            // Only objects we keep
             Player* player = nullptr;
 
-            // Many magnetic cubes
-            std::vector<MagneticEntry> magneticCubes;
-
+            // All metal objects that can be pulled / pushed
+            std::vector<MetalObject*> metalObjects;
 
             // Assets
             Rendering::Mesh* cubeMesh = nullptr;
@@ -75,10 +70,9 @@ namespace NCL {
             GameTechMaterial notexMaterial;
 
             // Magnet tuning (simple)
-            float magnetRange = 20.0f;
-            float magnetConeDot = 0.6f;    // >0.6 means roughly in front
-            float magnetForce = 250.0f;    // force applied to cube
-            float selfRecoilFactor = 0.25f; // optional recoil on player
+            float interactRange = 20.0f;
+            float interactConeDot = 0.6f;   // >0.6 means roughly in front
+            float interactForce = 250.0f;   // base force magnitude (F). Acceleration will depend on mass automatically.
         };
     }
 }
