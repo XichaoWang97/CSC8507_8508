@@ -52,6 +52,7 @@ namespace NCL::CSC8503 {
     private:
         GameWorld* gameWorld = nullptr;
         bool ignoreInput = false;
+		bool useFirstPerson = true;
         PlayerInputs currentInputs;
 
         LockMode lockMode = LockMode::PreLock;

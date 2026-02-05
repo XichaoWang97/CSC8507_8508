@@ -1,4 +1,4 @@
-#include "MyGame.h"
+﻿#include "MyGame.h"
 #include "MetalObject.h"
 #include "GameWorld.h"
 #include "PhysicsSystem.h"
@@ -246,18 +246,67 @@ void MyGame::ApplyPullPush(Player* p) {
     Vector3 origin = p->GetMagnetOrigin();
     // Use player's pre-lock / hard-lock target instead of re-selecting here
     MetalObject* bestObj = p->GetActiveTarget();
-    if (!bestObj) return;
-
-
-    PhysicsObject* objPhys = bestObj->GetPhysicsObject();
+    //if (!bestObj) return; //XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX射出直线/屏幕中心点
     PhysicsObject* playerPhys = p->GetPhysicsObject();
-    if (!objPhys || !playerPhys) return;
+    PhysicsObject* objPhys;
+	Vector3 objPos;
 
-    Vector3 objPos = bestObj->GetTransform().GetPosition();
+    if (bestObj) {
+        objPhys = bestObj->GetPhysicsObject();
+        if (!objPhys) return;
+        objPos = bestObj->GetTransform().GetPosition();
+    }
+    else {
+        // 没有 bestObj：使用屏幕中心射线命中的交点作为锚点
+        // 只在“还没有锚点”时做一次 Raycast，把点锁住
+        if (!p->HasAnchor()) {
+            // 这里用“屏幕中心点”射线：一般是 Camera position + forward
+            // 你需要用你项目里的 Camera 接口替换下面两行
+            Vector3 Pos = player->GetTransform().GetPosition();
+            Vector3 camDir = camera->GetForwardVector(); // 归一化方向
+            Ray ray(Pos, camDir);
+
+            RayCollision hit;
+            const float maxRayDist = interactRange; // 或者更长，比如 50.0f
+
+            // 这里用你框架里的 Raycast：名字可能是 world->Raycast 或 gameWorld->Raycast
+            // 你需要把参数对上你工程的实际函数签名
+            if (gameWorld->Raycast(ray, hit, true, this)) {
+                // 你需要在 RayCollision 里取到命中距离/点
+                // 常见是 hit.collidedAt / hit.point / hit.rayIntersection
+                Vector3 hitPos = hit.collidedAt;
+
+                // 如果你只允许“攀爬墙”，那就做一层过滤：
+                // 例如：命中对象带 tag "ClimbWall" 或者是某种 layer/type
+                GameObject* hitObj = (GameObject*)hit.node;
+                if (hitObj && hitObj->GetName() == "ClimbWall") { // 示例：按你的工程改
+                    // 锚点锁定
+                    // p->SetAnchor(hitPos, hitObj);
+                    // 如果你没写 SetAnchor，就直接改成员（写成 public setter 更干净）
+                    // 这里假设你写了一个 SetAnchor:
+                }
+                else {
+                    // 不符合攀爬条件就别锁
+                    return;
+                }
+            }
+            else {
+                // 射线没打到任何东西
+                return;
+            }
+        }
+
+        objPos = p->GetAnchorPos();
+
+        // anchor 对墙施力没意义（墙一般 invMass=0），所以 objPhys 为空就行
+        objPhys = nullptr;
+    }
+
+    //-----------------------------------------------------
+    //objPos = bestObj->GetTransform().GetPosition();
     Vector3 toObj = objPos - origin;
     float dist = Vector::Length(toObj);
     if (dist <= 0.0001f) return;
-    if (dist > interactRange) return;
     if (dist > interactRange) return;
     Vector3 dirToObj = toObj / dist;
 
