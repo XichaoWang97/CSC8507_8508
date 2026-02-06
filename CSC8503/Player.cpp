@@ -23,10 +23,8 @@ void Player::Update(float dt) {
         ReadLocalInput();
     }
 
-    
-
     // select lock-on candidates (optional debug / future feature)
-    if (currentInputs.toggleHardLockPressed) {
+    /*if (currentInputs.toggleHardLockPressed) {
         lockMode = LockMode::HardLock;
 		hardTarget = preTarget;
     }
@@ -34,19 +32,32 @@ void Player::Update(float dt) {
         lockMode = LockMode::PreLock;
 		preTarget = SelectBestPreTarget(); // always update pre-target
 		hardTarget = nullptr;
-    }
+    }*/
 
 	Vector3 player_position = GetTransform().GetPosition();
 
 	// Debug lines to targets
-	if (lockMode == LockMode::PreLock)  {
-		Vector3 pos = preTarget->GetTransform().GetPosition();
-        Debug::DrawLine(player_position, pos, Vector4(1.0f, 0.55f, 0.0f, 0.25f)); // orange for pre-target
+	if (lockMode == LockMode::PreLock) {
+        preTarget = SelectBestPreTarget(); // always update pre-target
+        if (preTarget) {
+            Vector3 pos = preTarget->GetTransform().GetPosition();
+            Debug::DrawLine(player_position, pos, Vector4(1.0f, 0.55f, 0.0f, 0.1f)); // orange for pre-target
+        }
     }
 
     if (lockMode == LockMode::HardLock) {
-        Vector3 pos = hardTarget->GetTransform().GetPosition();
-        Debug::DrawLine(player_position, pos, Vector4(1.0f, 0.55f, 0.0f, 0.75f));
+        if (hardTarget) {
+            Vector3 pos = hardTarget->GetTransform().GetPosition();
+            Debug::DrawLine(player_position, pos, Vector4(1.0f, 0.55f, 0.0f, 0.8f));
+
+			// if hard-locked, but somehow target got out of range, drop lock  // not works
+            Vector3 toTarget = hardTarget->GetTransform().GetPosition() - player_position;
+            float dist = Vector::Length(toTarget);
+            if (dist > lockRadius) {
+                lockMode = LockMode::PreLock;
+                hardTarget = nullptr;
+            }
+        }
     }
 
     PlayerControl(dt);
@@ -78,7 +89,16 @@ void Player::ReadLocalInput() {
     }
 
 	// F: toggle lock-on mode
-    if (Window::GetKeyboard()->KeyPressed(KeyCodes::F)) currentInputs.toggleHardLockPressed = !currentInputs.toggleHardLockPressed;
+    if (Window::GetKeyboard()->KeyPressed(KeyCodes::F)) {
+        if (preTarget && !hardTarget) {
+            lockMode = LockMode::HardLock;
+            hardTarget = preTarget;
+        }
+        else if (hardTarget) {
+            lockMode = LockMode::PreLock;
+            hardTarget = nullptr;
+        }
+    }
 }
 
 void Player::PlayerControl(float dt) {
@@ -149,7 +169,6 @@ Vector3 Player::GetAimForward() {
 // select best pre-target based on camera position/direction
 MetalObject* Player::SelectBestPreTarget() {
     auto& cam = gameWorld->GetMainCamera();
-    Vector3 camPos = cam.GetPosition();
     Vector3 camFwd = Vector::Normalise(cam.GetForwardVector());
     Vector3 playerPos = transform.GetPosition();
 
@@ -162,8 +181,8 @@ MetalObject* Player::SelectBestPreTarget() {
 	for (MetalObject* obj : *metalObjects) { // list of potential targets
         if (!obj) continue;
 
-        Vector3 objPos = obj->GetTransform().GetPosition();
-        Vector3 toObj = objPos - camPos;
+        Vector3 objPos = obj->GetTransform().GetPosition(); //缺少背后检测，背后出现的物品
+        Vector3 toObj = objPos - playerPos;
         float distCam = Vector::Length(toObj);
         if (distCam < 0.01f || distCam > lockRadius) continue;
 
@@ -175,7 +194,7 @@ MetalObject* Player::SelectBestPreTarget() {
         float distPlayer = Vector::Length((objPos - playerPos));
 
         // Optional: line-of-sight check (avoid locking through walls)
-        Ray ray(camPos, dir);
+        Ray ray(playerPos, dir);
         RayCollision hit;
         if (gameWorld->Raycast(ray, hit, true, this)) {
             // If the first thing we hit isn't the candidate object, skip it

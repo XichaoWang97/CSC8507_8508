@@ -153,7 +153,7 @@ MetalObject* MyGame::AddMetalCubeToWorld(const Vector3& position,
     const Vector3& halfDims,
     float inverseMass) {
 
-    MetalObject* cube = new MetalObject("MetalCube");
+    MetalObject* cube = new MetalObject();
 
     AABBVolume* volume = new AABBVolume(halfDims);
     cube->SetBoundingVolume(volume);
@@ -178,7 +178,7 @@ MetalObject* MyGame::AddMetalOBBCubeToWorld(const Vector3& position,
     Vector3 dimensions,
     float inverseMass) {
 
-    MetalObject* cube = new MetalObject("MetalOBB");
+    MetalObject* cube = new MetalObject();
 
     OBBVolume* volume = new OBBVolume(dimensions);
     cube->SetBoundingVolume(volume);
@@ -231,6 +231,7 @@ void MyGame::SetCameraToPlayer(Player* p) {
     world.GetMainCamera().SetPosition(camPos);
 }
 
+// MVP: Pull/push interaction logic (called from UpdateGame, when player is holding LMB/RMB)
 void MyGame::ApplyPullPush(Player* p) {
     if (!p) return;
 
@@ -245,7 +246,7 @@ void MyGame::ApplyPullPush(Player* p) {
 
     Vector3 origin = p->GetMagnetOrigin();
     // Use player's pre-lock / hard-lock target instead of re-selecting here
-    MetalObject* bestObj = p->GetActiveTarget();
+    MetalObject* bestObj = p->GetLockedTarget();
     //if (!bestObj) return; //XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX射出直线/屏幕中心点
     PhysicsObject* playerPhys = p->GetPhysicsObject();
     PhysicsObject* objPhys;
@@ -259,47 +260,28 @@ void MyGame::ApplyPullPush(Player* p) {
     else {
         // 没有 bestObj：使用屏幕中心射线命中的交点作为锚点
         // 只在“还没有锚点”时做一次 Raycast，把点锁住
-        if (!p->HasAnchor()) {
-            // 这里用“屏幕中心点”射线：一般是 Camera position + forward
-            // 你需要用你项目里的 Camera 接口替换下面两行
-            Vector3 Pos = player->GetTransform().GetPosition();
-            Vector3 camDir = camera->GetForwardVector(); // 归一化方向
-            Ray ray(Pos, camDir);
+        // No bestObj: shoot a ray from the screen centre (camera forward), like an FPS.
+        const float yaw = world.GetMainCamera().GetYaw();
+        const float pitch = world.GetMainCamera().GetPitch();
+        const Quaternion camRot = Quaternion::EulerAnglesToQuaternion(pitch, yaw, 0);
 
-            RayCollision hit;
-            const float maxRayDist = interactRange; // 或者更长，比如 50.0f
+		const Vector3 rayOrigin = world.GetMainCamera().GetPosition(); // camera position(can be changed)
+        const Vector3 rayDir = camRot * Vector3(0, 0, -1); // camera forward (-Z)
+        Ray ray(rayOrigin, rayDir);
+        RayCollision hit;
 
-            // 这里用你框架里的 Raycast：名字可能是 world->Raycast 或 gameWorld->Raycast
-            // 你需要把参数对上你工程的实际函数签名
-            if (gameWorld->Raycast(ray, hit, true, this)) {
-                // 你需要在 RayCollision 里取到命中距离/点
-                // 常见是 hit.collidedAt / hit.point / hit.rayIntersection
-                Vector3 hitPos = hit.collidedAt;
+        //XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+        GameObject* hitGO = static_cast<GameObject*>(hit.node);
+        if (!hitGO) return;
 
-                // 如果你只允许“攀爬墙”，那就做一层过滤：
-                // 例如：命中对象带 tag "ClimbWall" 或者是某种 layer/type
-                GameObject* hitObj = (GameObject*)hit.node;
-                if (hitObj && hitObj->GetName() == "ClimbWall") { // 示例：按你的工程改
-                    // 锚点锁定
-                    // p->SetAnchor(hitPos, hitObj);
-                    // 如果你没写 SetAnchor，就直接改成员（写成 public setter 更干净）
-                    // 这里假设你写了一个 SetAnchor:
-                }
-                else {
-                    // 不符合攀爬条件就别锁
-                    return;
-                }
-            }
-            else {
-                // 射线没打到任何东西
-                return;
-            }
-        }
+        // 例：按名字过滤（你创建 metal cube 时的 name 自己定）
+        if (hitGO->GetName().find("MetalObject") == std::string::npos) return;
 
-        objPos = p->GetAnchorPos();
+        objPhys = hitGO->GetPhysicsObject();
+        if (!objPhys) return;
 
-        // anchor 对墙施力没意义（墙一般 invMass=0），所以 objPhys 为空就行
-        objPhys = nullptr;
+        float dist = hit.rayDistance;
+        objPos = rayOrigin + rayDir * dist;
     }
 
     //-----------------------------------------------------
@@ -307,7 +289,7 @@ void MyGame::ApplyPullPush(Player* p) {
     Vector3 toObj = objPos - origin;
     float dist = Vector::Length(toObj);
     if (dist <= 0.0001f) return;
-    if (dist > interactRange) return;
+    if (dist > p->GetLockRadius()) return;
     Vector3 dirToObj = toObj / dist;
 
     // Pull => bring together (object towards player, player towards object)

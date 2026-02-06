@@ -70,7 +70,6 @@ namespace NCL {
             GameTechMaterial notexMaterial;
 
             // Magnet tuning (simple)
-            float interactRange = 20.0f;
             float interactConeDot = 0.6f;   // >0.6 means roughly in front
             float interactForce = 250.0f;   // base force magnitude (F). Acceleration will depend on mass automatically.
         };

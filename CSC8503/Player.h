@@ -1,5 +1,5 @@
 ﻿#pragma once
-#include <vector>                 // 记得要有
+#include <vector>
 #include "GameObject.h"
 #include "Window.h"
 #include "RenderObject.h"
@@ -33,10 +33,11 @@ namespace NCL::CSC8503 {
 
         void SetMetalObjects(const std::vector<MetalObject*>* list) { metalObjects = list; }
 
-        MetalObject* GetActiveTarget() const {
-            return (lockMode == LockMode::HardLock && hardTarget) ? hardTarget : preTarget;
+		// Get the current target based on lock mode. Will return nullptr if no valid target.
+        MetalObject* GetLockedTarget() const {
+            return hardTarget;
         }
-
+		float GetLockRadius() const { return lockRadius; }
         bool IsPullHeld() const { return currentInputs.pullHeld; }
         bool IsPushHeld() const { return currentInputs.pushHeld; }
 
