@@ -1,9 +1,10 @@
 ﻿#include "MyGame.h"
+#include "Level.h"
 #include "MetalObject.h"
 #include "GameWorld.h"
 #include "PhysicsSystem.h"
 #include "PhysicsObject.h"
-#include "RenderObject.h"
+#include "LevelRegistry.h"
 
 #include "Window.h"
 #include "Debug.h"
@@ -35,12 +36,6 @@ MyGame::MyGame(GameWorld& inWorld, GameTechRendererInterface& inRenderer, Physic
     controller->MapAxis(3, "XLook");
     controller->MapAxis(4, "YLook");
 
-    // assets
-    cubeMesh = renderer.LoadMesh("cube.msh");
-    playerMesh = renderer.LoadMesh("cat.msh");
-    defaultTex = renderer.LoadTexture("checkerboard.png");
-    notexMaterial = GameTechMaterial();
-
     InitCamera();
     InitWorld();
 }
@@ -56,18 +51,15 @@ void MyGame::UpdateGame(float dt) {
 
     if (!player) return;
 
-    // Keep your 3rd person camera-follow logic
     SetCameraToPlayer(player);
 
-    // Update player movement & pull/push input
     player->Update(dt);
 
-    // Apply pull/push interaction (hold LMB/RMB)
     ApplyPullPush(player);
 
-    Debug::Print("LMB: Pull | RMB: Push", Vector2(5, 5), Vector4(1, 1, 1, 1));
+    Debug::Print("LMB: Pull | RMB: Push | F: lock on object", Vector2(5, 5), Vector4(1, 1, 1, 1));
 
-    // update physics/world (kept same pattern as your original MyGame)
+    // update physics/world
     physics.Update(dt);
     world.UpdateWorld(dt);
 }
@@ -84,121 +76,31 @@ void MyGame::InitWorld() {
     world.ClearAndErase();
     physics.Clear();
     metalObjects.clear();
+    player = nullptr;
 
-    // Floor
-    AddFloorToWorld(Vector3(0, -1, 0));
+    // Build via Level (so teammates can own Level.cpp/h without touching MyGame)
+    currentLevel = LevelRegistry::Get().Create(0);
+    if (!currentLevel) {
+        return;
+    }
 
-    // Player
-    player = AddPlayerToWorld(Vector3(0, 3, 0), 2.0f, 0.5f);
+    LevelContext ctx;
+    ctx.world = &world;
+    ctx.physics = &physics;
+    ctx.renderer = &renderer;
+    ctx.metalObjects = &metalObjects;
+    ctx.playerOut = &player;
+
+    currentLevel->SetContext(ctx);
+    currentLevel->Build();
+
     // Let Player do pre-lock selection on our metal list
-    player->SetMetalObjects(&metalObjects);
-
-    // Example: place multiple metal objects
-    // inverseMass == 0 => immovable "anchor" you can pull yourself to
-    AddMetalCubeToWorld(Vector3(0, 2, -12), Vector3(1, 1, 1), 1.0f);
-    AddMetalCubeToWorld(Vector3(6, 2, -10), Vector3(1, 1, 1), 1.0f);
-    AddMetalCubeToWorld(Vector3(-6, 12, -10), Vector3(1, 1, 1), 0.0f);
-
-    // Keep one OBB metal cube for testing (if your OBB is stable enough)
-    AddMetalOBBCubeToWorld(Vector3(10, 2, -6), Vector3(1, 1, 1), 1.0f);
+    if (player) {
+        player->SetMetalObjects(&metalObjects);
+    }
 }
 
-GameObject* MyGame::AddFloorToWorld(const Vector3& position) {
-    GameObject* floor = new GameObject("Floor");
-
-    Vector3 floorHalfSize = Vector3(200, 1, 200);
-    AABBVolume* volume = new AABBVolume(floorHalfSize);
-    floor->SetBoundingVolume(volume);
-
-    floor->GetTransform()
-        .SetScale(floorHalfSize * 2.0f)
-        .SetPosition(position);
-
-    floor->SetRenderObject(new RenderObject(floor->GetTransform(), cubeMesh, notexMaterial));
-    floor->GetRenderObject()->SetColour(Vector4(0.25f, 0.25f, 0.25f, 1.0f));
-
-    floor->SetPhysicsObject(new PhysicsObject(floor->GetTransform(), floor->GetBoundingVolume()));
-    floor->GetPhysicsObject()->SetInverseMass(0.0f);
-    floor->GetPhysicsObject()->InitCubeInertia();
-
-    world.AddGameObject(floor);
-    return floor;
-}
-
-Player* MyGame::AddPlayerToWorld(const Vector3& position, float radius, float inverseMass) {
-    Player* p = new Player(&world);
-
-    SphereVolume* volume = new SphereVolume(radius * 0.5f);
-    p->SetBoundingVolume(volume);
-
-    p->GetTransform()
-        .SetScale(Vector3(radius, radius, radius))
-        .SetPosition(position);
-
-    p->SetRenderObject(new RenderObject(p->GetTransform(), playerMesh, notexMaterial));
-    p->GetRenderObject()->SetColour(Vector4(0,1,1,1));
-
-    PhysicsObject* po = new PhysicsObject(p->GetTransform(), p->GetBoundingVolume());
-    po->SetInverseMass(inverseMass);
-    po->InitSphereInertia();
-    po->SetElasticity(0.0f); // no bounciness
-
-    p->SetPhysicsObject(po);
-
-    world.AddGameObject(p);
-    return p;
-}
-
-MetalObject* MyGame::AddMetalCubeToWorld(const Vector3& position,
-    const Vector3& halfDims,
-    float inverseMass) {
-
-    MetalObject* cube = new MetalObject();
-
-    AABBVolume* volume = new AABBVolume(halfDims);
-    cube->SetBoundingVolume(volume);
-
-    cube->GetTransform()
-        .SetPosition(position)
-        .SetScale(halfDims * 2.0f);
-
-    cube->SetRenderObject(new RenderObject(cube->GetTransform(), cubeMesh, notexMaterial));
-    cube->GetRenderObject()->SetColour(Vector4(0.65f, 0.65f, 0.7f, 1.0f)); // "metal-ish"
-
-    cube->SetPhysicsObject(new PhysicsObject(cube->GetTransform(), cube->GetBoundingVolume()));
-    cube->GetPhysicsObject()->SetInverseMass(inverseMass);
-    cube->GetPhysicsObject()->InitCubeInertia();
-
-    world.AddGameObject(cube);
-    metalObjects.push_back(cube);
-    return cube;
-}
-
-MetalObject* MyGame::AddMetalOBBCubeToWorld(const Vector3& position,
-    Vector3 dimensions,
-    float inverseMass) {
-
-    MetalObject* cube = new MetalObject();
-
-    OBBVolume* volume = new OBBVolume(dimensions);
-    cube->SetBoundingVolume(volume);
-
-    cube->GetTransform()
-        .SetPosition(position)
-        .SetScale(dimensions * 2.0f);
-
-    cube->SetRenderObject(new RenderObject(cube->GetTransform(), cubeMesh, notexMaterial));
-    cube->GetRenderObject()->SetColour(Vector4(0.65f, 0.65f, 0.7f, 1.0f));
-
-    cube->SetPhysicsObject(new PhysicsObject(cube->GetTransform(), cube->GetBoundingVolume()));
-    cube->GetPhysicsObject()->SetInverseMass(inverseMass);
-    cube->GetPhysicsObject()->InitCubeInertia();
-
-    world.AddGameObject(cube);
-    metalObjects.push_back(cube);
-    return cube;
-}
-
+// GameMechanic: 3rd person follow camera logic
 void MyGame::SetCameraToPlayer(Player* p) {
     Vector3 playerPos = p->GetTransform().GetPosition();
 
@@ -231,7 +133,7 @@ void MyGame::SetCameraToPlayer(Player* p) {
     world.GetMainCamera().SetPosition(camPos);
 }
 
-// MVP: Pull/push interaction logic (called from UpdateGame, when player is holding LMB/RMB)
+// GameMechanic: Pull/push interaction logic
 void MyGame::ApplyPullPush(Player* p) {
     if (!p) return;
 
@@ -245,12 +147,12 @@ void MyGame::ApplyPullPush(Player* p) {
     if (metalObjects.empty()) return;
 
     Vector3 origin = p->GetMagnetOrigin();
+
     // Use player's pre-lock / hard-lock target instead of re-selecting here
     MetalObject* bestObj = p->GetLockedTarget();
-    //if (!bestObj) return; //XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX射出直线/屏幕中心点
     PhysicsObject* playerPhys = p->GetPhysicsObject();
     PhysicsObject* objPhys;
-	Vector3 objPos;
+    Vector3 objPos;
 
     if (bestObj) {
         objPhys = bestObj->GetPhysicsObject();
@@ -258,33 +160,44 @@ void MyGame::ApplyPullPush(Player* p) {
         objPos = bestObj->GetTransform().GetPosition();
     }
     else {
-        // 没有 bestObj：使用屏幕中心射线命中的交点作为锚点
-        // 只在“还没有锚点”时做一次 Raycast，把点锁住
-        // No bestObj: shoot a ray from the screen centre (camera forward), like an FPS.
-        const float yaw = world.GetMainCamera().GetYaw();
-        const float pitch = world.GetMainCamera().GetPitch();
-        const Quaternion camRot = Quaternion::EulerAnglesToQuaternion(pitch, yaw, 0);
+        // No locked target: cast a ray straight forward from the player
+        Vector3 rayOrigin = origin;             // origin = p->GetMagnetOrigin()
+        Vector3 rayDir = p->GetAimForward();    // In Player.cpp forward is defined as +Z
 
-		const Vector3 rayOrigin = world.GetMainCamera().GetPosition(); // camera position(can be changed)
-        const Vector3 rayDir = camRot * Vector3(0, 0, -1); // camera forward (-Z)
+        Vector::Normalise(rayDir);
+
+        const Vector4 rayColor = pulling ? Vector4(0.2f, 1.0f, 0.2f, 0.35f)
+            : Vector4(1.0f, 0.2f, 0.2f, 0.35f);
+
+        // 1.Draw the full ray each frame (so you can confirm the ray is emitted)
+        Debug::DrawLine(rayOrigin, rayOrigin + rayDir * p->GetLockRadius(), rayColor);
+
         Ray ray(rayOrigin, rayDir);
         RayCollision hit;
 
-        //XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+        // 2.Perform the actual raycast (otherwise hit is uninitialized)
+        if (!world.Raycast(ray, hit, true, p)) {
+            return;
+        }
+
         GameObject* hitGO = static_cast<GameObject*>(hit.node);
         if (!hitGO) return;
 
-        // 例：按名字过滤（你创建 metal cube 时的 name 自己定）
+        // 3.Only allow metallic objects (currently filtered by name)
         if (hitGO->GetName().find("MetalObject") == std::string::npos) return;
 
         objPhys = hitGO->GetPhysicsObject();
         if (!objPhys) return;
 
-        float dist = hit.rayDistance;
-        objPos = rayOrigin + rayDir * dist;
+        // 4.Hit point (ray intersection point)
+        objPos = rayOrigin + rayDir * hit.rayDistance;
+
+        // 5.Draw a clearer line to the hit point
+        const Vector4 hitCol = pulling ? Vector4(0.2f, 1.0f, 0.2f, 1.0f)
+            : Vector4(1.0f, 0.2f, 0.2f, 1.0f);
+        Debug::DrawLine(rayOrigin, objPos, hitCol);
     }
 
-    //-----------------------------------------------------
     //objPos = bestObj->GetTransform().GetPosition();
     Vector3 toObj = objPos - origin;
     float dist = Vector::Length(toObj);

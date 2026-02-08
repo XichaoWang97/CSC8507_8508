@@ -60,7 +60,7 @@ namespace NCL::CSC8503 {
         MetalObject* preTarget = nullptr;
         MetalObject* hardTarget = nullptr;
 
-        float lockRadius = 40.0f;
+		float lockRadius = 60.0f; // Max distance for locking onto targets and for pull/push interactions
         float minFacingDot = 0.15f;
         float centerTieEps = 0.02f;
 

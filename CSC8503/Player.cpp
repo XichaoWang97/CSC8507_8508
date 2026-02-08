@@ -23,17 +23,6 @@ void Player::Update(float dt) {
         ReadLocalInput();
     }
 
-    // select lock-on candidates (optional debug / future feature)
-    /*if (currentInputs.toggleHardLockPressed) {
-        lockMode = LockMode::HardLock;
-		hardTarget = preTarget;
-    }
-    else {
-        lockMode = LockMode::PreLock;
-		preTarget = SelectBestPreTarget(); // always update pre-target
-		hardTarget = nullptr;
-    }*/
-
 	Vector3 player_position = GetTransform().GetPosition();
 
 	// Debug lines to targets

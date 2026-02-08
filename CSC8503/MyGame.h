@@ -2,22 +2,17 @@
 
 #include "Player.h"
 #include "MetalObject.h"
-#include "RenderObject.h"
 #include <vector>
+#include <memory>
 
 namespace NCL {
     class Controller;
-
-    namespace Rendering {
-        class Mesh;
-        class Texture;
-    }
 
     namespace CSC8503 {
         class GameTechRendererInterface;
         class PhysicsSystem;
         class GameWorld;
-        class GameObject;
+        class Level;
 
         class MyGame {
         public:
@@ -30,19 +25,6 @@ namespace NCL {
         private:
             void InitCamera();
             void InitWorld();
-
-            // Level building
-            GameObject*   AddFloorToWorld(const NCL::Maths::Vector3& position);
-            Player*       AddPlayerToWorld(const NCL::Maths::Vector3& position, float radius, float inverseMass);
-
-            // Pullable / pushable objects
-            MetalObject*  AddMetalCubeToWorld(const NCL::Maths::Vector3& position,
-                const NCL::Maths::Vector3& halfDims,
-                float inverseMass);
-
-            MetalObject*  AddMetalOBBCubeToWorld(const NCL::Maths::Vector3& position,
-                NCL::Maths::Vector3 dimensions,
-                float inverseMass);
 
             // Camera follow logic
             void SetCameraToPlayer(Player* player);
@@ -59,15 +41,11 @@ namespace NCL {
 
             Player* player = nullptr;
 
-            // All metal objects that can be pulled / pushed
+            // All metal objects that can be pulled / pushed (shared with levels)
             std::vector<MetalObject*> metalObjects;
 
-            // Assets
-            Rendering::Mesh* cubeMesh = nullptr;
-            Rendering::Mesh* playerMesh = nullptr;
-
-            Rendering::Texture* defaultTex = nullptr;
-            GameTechMaterial notexMaterial;
+            // Current level instance
+            std::unique_ptr<Level> currentLevel;
 
             // Magnet tuning (simple)
             float interactConeDot = 0.6f;   // >0.6 means roughly in front
