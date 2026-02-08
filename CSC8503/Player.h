@@ -1,26 +1,22 @@
-#pragma once
+﻿#pragma once
+#include <vector>
 #include "GameObject.h"
 #include "Window.h"
 #include "RenderObject.h"
+#include "MetalObject.h"
 
 namespace NCL::CSC8503 {
 
     class GameWorld;
 
-    enum class Polarity : uint8_t {
-        None = 0,
-        South = 1, // Orange
-        North = 2  // Blue
-    };
+    enum class LockMode { PreLock, HardLock };
 
     struct PlayerInputs {
         NCL::Maths::Vector3 axis = NCL::Maths::Vector3(0, 0, 0);
         bool jump = false;
-
-        // polarity hold (while pressed)
-        bool holdSouth = false; // LMB
-        bool holdNorth = false; // RMB
-
+        bool pullHeld = false;
+        bool pushHeld = false;
+        bool toggleHardLockPressed = false;
         float cameraYaw = 0.0f;
     };
 
@@ -31,42 +27,50 @@ namespace NCL::CSC8503 {
 
         void Update(float dt);
 
-        // For networked mode (optional)
         void SetIgnoreInput(bool ignore) { ignoreInput = ignore; }
         bool GetIgnoreInput() const { return ignoreInput; }
         void SetPlayerInput(const PlayerInputs& inputs) { currentInputs = inputs; }
 
-        // Polarity (hold)
-        bool     IsPolarityPulseActive() const { return polarityState != Polarity::None; }
-        Polarity GetPolarityPulse() const { return polarityState; }
+        void SetMetalObjects(const std::vector<MetalObject*>* list) { metalObjects = list; }
 
-        // Magnet helpers
-        NCL::Maths::Vector3 GetMagnetOrigin();  // non-const to avoid const-correctness issues in your engine
+		// Get the current target based on lock mode. Will return nullptr if no valid target.
+        MetalObject* GetLockedTarget() const {
+            return hardTarget;
+        }
+		float GetLockRadius() const { return lockRadius; }
+        bool IsPullHeld() const { return currentInputs.pullHeld; }
+        bool IsPushHeld() const { return currentInputs.pushHeld; }
+
+        NCL::Maths::Vector3 GetMagnetOrigin();
         NCL::Maths::Vector3 GetAimForward();
 
     private:
         void PlayerControl(float dt);
-        bool IsPlayerOnGround();               // non-const (Raycast ignore expects GameObject*)
-        
-        void SetPolarityState(Polarity p);
-
-        void ReadLocalInput();                 // fills currentInputs
-		void SelectCandicatesForLockOn();
+        bool IsPlayerOnGround();
+        void ReadLocalInput();
+        MetalObject* SelectBestPreTarget();
 
     private:
         GameWorld* gameWorld = nullptr;
-
         bool ignoreInput = false;
-        bool lockModeHeld = false;
+		bool useFirstPerson = true;
+		bool canDoubleJump = false;
         PlayerInputs currentInputs;
 
-        // movement tuning
+        LockMode lockMode = LockMode::PreLock;
+        MetalObject* preTarget = nullptr;
+        MetalObject* hardTarget = nullptr;
+
+		float lockRadius = 60.0f; // Max distance for locking onto targets and for pull/push interactions
+        float minFacingDot = 0.15f;
+        float centerTieEps = 0.02f;
+
+        const std::vector<MetalObject*>* metalObjects = nullptr;
+
         float moveForce = 60.0f;
         float maxSpeed = 15.0f;
         float rotationSpeed = 10.0f;
-        float jumpImpulse = 15.0f;
-
-        // polarity state (hold)
-        Polarity polarityState = Polarity::None;
+        float jumpImpulse = 30.0f;
     };
+
 }

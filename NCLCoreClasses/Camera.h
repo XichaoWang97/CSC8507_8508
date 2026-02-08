@@ -10,6 +10,7 @@ https://research.ncl.ac.uk/game/
 #include "Vector.h"
 #include "Matrix.h"
 #include "Controller.h"
+#include "Quaternion.h"
 
 namespace NCL {
 	using namespace NCL::Maths;
@@ -129,6 +130,13 @@ namespace NCL {
 		}
 
 		Matrix4 BuildProjectionMatrix(float aspectRatio = 1.0f) const override;
+
+		// New
+		Vector3 GetForwardVector() const {
+			Quaternion q = Quaternion::EulerAnglesToQuaternion(pitch, yaw, 0);
+			return (q * Vector3(0, 0, -1));
+		}
+
 
 	protected:
 		float	fov;

@@ -1,4 +1,4 @@
-Ver0.1 :
+Ver0.12(Branch NoPolarity):
 
 Objects with different colors: Blue (North polarity), Orange (South polarity)
 

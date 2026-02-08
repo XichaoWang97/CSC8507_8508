@@ -1,4 +1,4 @@
-#include "Player.h"
+﻿#include "Player.h"
 #include "GameWorld.h"
 #include "PhysicsObject.h"
 #include "Ray.h"
@@ -8,19 +8,12 @@ using namespace NCL;
 using namespace NCL::Maths;
 using namespace NCL::CSC8503;
 
-static Vector4 ColourForPolarity(Polarity p) {
-    // South = Orange, North = Blue
-    switch (p) {
-    case Polarity::South: return Vector4(1.0f, 0.55f, 0.0f, 1.0f);
-    case Polarity::North: return Vector4(0.2f, 0.5f, 1.0f, 1.0f);
-    default:              return Vector4(0.9f, 0.9f, 0.9f, 1.0f);
-    }
-}
-
 Player::Player(GameWorld* world)
     : GameObject("Player")
     , gameWorld(world) {
 }
+
+Player::~Player() = default;
 
 void Player::Update(float dt) {
     if (!gameWorld) return;
@@ -30,24 +23,30 @@ void Player::Update(float dt) {
         ReadLocalInput();
     }
 
-    // polarity hold: press = set, release = neutral
-    if (currentInputs.holdSouth && !currentInputs.holdNorth) {
-        SetPolarityState(Polarity::South);
-    }
-    else if (currentInputs.holdNorth && !currentInputs.holdSouth) {
-        SetPolarityState(Polarity::North);
-    }
-    else {
-        SetPolarityState(Polarity::None);
+	Vector3 player_position = GetTransform().GetPosition();
+
+	// Debug lines to targets
+	if (lockMode == LockMode::PreLock) {
+        preTarget = SelectBestPreTarget(); // always update pre-target
+        if (preTarget) {
+            Vector3 pos = preTarget->GetTransform().GetPosition();
+            Debug::DrawLine(player_position, pos, Vector4(1.0f, 0.55f, 0.0f, 0.1f)); // orange for pre-target
+        }
     }
 
-    // update colour (current polarity)
-    if (GetRenderObject()) {
-        GetRenderObject()->SetColour(ColourForPolarity(GetPolarityPulse()));
-    }
-	// select lock-on candidates
-    if (lockModeHeld) {
-        SelectCandicatesForLockOn();
+    if (lockMode == LockMode::HardLock) {
+        if (hardTarget) {
+            Vector3 pos = hardTarget->GetTransform().GetPosition();
+            Debug::DrawLine(player_position, pos, Vector4(1.0f, 0.55f, 0.0f, 0.8f));
+
+			// if hard-locked, but somehow target got out of range, drop lock  // not works
+            Vector3 toTarget = hardTarget->GetTransform().GetPosition() - player_position;
+            float dist = Vector::Length(toTarget);
+            if (dist > lockRadius) {
+                lockMode = LockMode::PreLock;
+                hardTarget = nullptr;
+            }
+        }
     }
 
     PlayerControl(dt);
@@ -56,8 +55,8 @@ void Player::Update(float dt) {
 void Player::ReadLocalInput() {
     currentInputs.axis = Vector3(0, 0, 0);
     currentInputs.jump = false;
-    currentInputs.holdSouth = false;
-    currentInputs.holdNorth = false;
+    currentInputs.pullHeld = false;
+    currentInputs.pushHeld = false;
 
     currentInputs.cameraYaw = gameWorld->GetMainCamera().GetYaw();
 
@@ -70,26 +69,25 @@ void Player::ReadLocalInput() {
         currentInputs.jump = true;
     }
 
+    // LMB = Pull, RMB = Push
     if (Window::GetMouse()->ButtonDown(MouseButtons::Left)) {
-        currentInputs.holdSouth = true;
+        currentInputs.pullHeld = true;
     }
     if (Window::GetMouse()->ButtonDown(MouseButtons::Right)) {
-        currentInputs.holdNorth = true;
+        currentInputs.pushHeld = true;
     }
 
-    if (Window::GetKeyboard()->KeyDown(KeyCodes::LMENU)) {
-        // select candicates in the screen
-        lockModeHeld = true;
+	// F: toggle lock-on mode
+    if (Window::GetKeyboard()->KeyPressed(KeyCodes::F)) {
+        if (preTarget && !hardTarget) {
+            lockMode = LockMode::HardLock;
+            hardTarget = preTarget;
+        }
+        else if (hardTarget) {
+            lockMode = LockMode::PreLock;
+            hardTarget = nullptr;
+        }
     }
-    else {
-		lockModeHeld = false;
-    }
-}
-
-void Player::SetPolarityState(Polarity p) {
-    // avoid repeating one-shot effects every frame
-    if (polarityState == p) return;
-    polarityState = p;
 }
 
 void Player::PlayerControl(float dt) {
@@ -129,9 +127,13 @@ void Player::PlayerControl(float dt) {
     }
 
     // jump
-    if (currentInputs.jump && IsPlayerOnGround()) {
+    bool grounded = IsPlayerOnGround();
+    if (currentInputs.jump && (grounded || canDoubleJump)) {
         phys->ApplyLinearImpulse(Vector3(0, jumpImpulse, 0));
         currentInputs.jump = false;
+        if (!grounded) {
+            canDoubleJump = false; // consume double jump when airborne
+        }
     }
 }
 
@@ -142,9 +144,10 @@ bool Player::IsPlayerOnGround() {
 
     const float groundCheckDist = 1.1f;
     if (gameWorld->Raycast(ray, hit, true, this)) {
-        return hit.rayDistance < groundCheckDist;
+        if (hit.rayDistance > groundCheckDist) return false;
+        canDoubleJump = true;
+        return true;
     }
-    return false;
 }
 
 Vector3 Player::GetMagnetOrigin() {
@@ -152,75 +155,58 @@ Vector3 Player::GetMagnetOrigin() {
 }
 
 Vector3 Player::GetAimForward() {
-    // ģͳΪ׼
+    // Default: model forward is +Z in this framework
     Quaternion q = GetTransform().GetOrientation();
-
-    //  (0,0,-1) ǡΪģͱǰ
-    // Ƿ͸ĳ (0,0,1)
     return q * Vector3(0, 0, 1);
 }
 
-/*struct Candidate {
-	GameObject* obj; // 候选目标
-    float centerError;   // 越小越靠近屏幕中心
-    float distPlayer;    // 越小越近
-    float score;         // 综合排序
-};
-
-void Player::SelectCandicatesForLockOn() {
-    candidates.clear();
-
-    Vector3 camPos = camera->GetPosition();
-    Vector3 camFwd = camera->GetForwardVector().Normalised();
+// select best pre-target based on camera position/direction
+MetalObject* Player::SelectBestPreTarget() {
+    auto& cam = gameWorld->GetMainCamera();
+    Vector3 camFwd = Vector::Normalise(cam.GetForwardVector());
     Vector3 playerPos = transform.GetPosition();
 
-    for (GameObject* obj : magneticObjects) { // 你的磁性物体列表
+    MetalObject* best = nullptr;
+    float bestCenter = 1e9f;
+    float bestDist = 1e9f;
+
+	if (!metalObjects) return nullptr;
+
+	for (MetalObject* obj : *metalObjects) { // list of potential targets
         if (!obj) continue;
 
         Vector3 objPos = obj->GetTransform().GetPosition();
-        Vector3 toObj = objPos - camPos;
-        float distCam = toObj.Length();
-        if (distCam <= 0.01f) continue;
-        if (distCam > lockRadius) continue;
+        Vector3 toObj = objPos - playerPos;
+        float distCam = Vector::Length(toObj);
+        if (distCam < 0.01f || distCam > lockRadius) continue;
 
         Vector3 dir = toObj / distCam;
-        float dot = Vector3::Dot(camFwd, dir);
+        float dot = Vector::Dot(camFwd, dir);
+        if (dot < minFacingDot) continue;
 
-        // 在视线前方 + 粗略视锥（你可调阈值）
-        if (dot < 0.15f) continue;
-
-        // centerError 越小越接近屏幕中心
         float centerError = 1.0f - dot;
+        float distPlayer = Vector::Length((objPos - playerPos));
 
-        float distPlayer = (objPos - playerPos).Length();
+        // Optional: line-of-sight check (avoid locking through walls)
+        Ray ray(playerPos, dir);
+        RayCollision hit;
+        if (gameWorld->Raycast(ray, hit, true, this)) {
+            // If the first thing we hit isn't the candidate object, skip it
+            if (hit.node != obj) {
+                continue;
+            }
+        }
 
-        Candidate c;
-        c.obj = obj;
-        c.centerError = centerError;
-        c.distPlayer = distPlayer;
+		// best candidate selection
+        bool better = false;
+        if (centerError + centerTieEps < bestCenter) better = true;
+        else if (fabs(centerError - bestCenter) <= centerTieEps && distPlayer < bestDist) better = true;
 
-        // 综合评分：中心优先，距离次之（权重可调）
-        c.score = centerError * 10.0f + distPlayer * 0.05f;
-
-        candidates.push_back(c);
+        if (better) {
+            best = obj;
+            bestCenter = centerError;
+            bestDist = distPlayer;
+        }
     }
-
-    std::sort(candidates.begin(), candidates.end(),
-        [](const Candidate& a, const Candidate& b) {
-            // 二级排序：中心优先，中心接近时再比距离
-            if (fabs(a.centerError - b.centerError) > 0.02f)
-                return a.centerError < b.centerError;
-            return a.distPlayer < b.distPlayer;
-        });
-
-    // 选中第一个作为 hover
-    if (!candidates.empty()) {
-        hoverTarget = candidates[0].obj;
-        hoverIndex = 0;
-    }
-    else {
-        hoverTarget = nullptr;
-        hoverIndex = -1;
-    }
-}*/
-
+    return best;
+}
