@@ -127,9 +127,13 @@ void Player::PlayerControl(float dt) {
     }
 
     // jump
-    if (currentInputs.jump && IsPlayerOnGround()) {
+    bool grounded = IsPlayerOnGround();
+    if (currentInputs.jump && (grounded || canDoubleJump)) {
         phys->ApplyLinearImpulse(Vector3(0, jumpImpulse, 0));
         currentInputs.jump = false;
+        if (!grounded) {
+            canDoubleJump = false; // consume double jump when airborne
+        }
     }
 }
 
@@ -140,9 +144,10 @@ bool Player::IsPlayerOnGround() {
 
     const float groundCheckDist = 1.1f;
     if (gameWorld->Raycast(ray, hit, true, this)) {
-        return hit.rayDistance < groundCheckDist;
+        if (hit.rayDistance > groundCheckDist) return false;
+        canDoubleJump = true;
+        return true;
     }
-    return false;
 }
 
 Vector3 Player::GetMagnetOrigin() {
@@ -170,7 +175,7 @@ MetalObject* Player::SelectBestPreTarget() {
 	for (MetalObject* obj : *metalObjects) { // list of potential targets
         if (!obj) continue;
 
-        Vector3 objPos = obj->GetTransform().GetPosition(); //缺少背后检测，背后出现的物品
+        Vector3 objPos = obj->GetTransform().GetPosition();
         Vector3 toObj = objPos - playerPos;
         float distCam = Vector::Length(toObj);
         if (distCam < 0.01f || distCam > lockRadius) continue;
