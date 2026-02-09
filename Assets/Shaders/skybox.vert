@@ -1,10 +1,7 @@
-#version 330 core
+#version 430 core
+#include "PassData.glsl"
 
-uniform mat4 modelMatrix;
-uniform mat4 viewMatrix;
-uniform mat4 projMatrix;
-
-in  vec3 position;
+layout(location = 0) in vec3 position;
 
 out Vertex {
 	vec3 viewDir;

@@ -27,6 +27,24 @@ namespace NCL {
 			Texture*	LoadTexture(const std::string& name)								override;
 	
 		protected:
+
+			// -------- Shared render pass data (UBO) --------
+			struct alignas(16) PassDataCPU {
+				Matrix4 viewMatrix;
+				Matrix4 projMatrix;
+				Matrix4 viewProjMatrix;
+				Matrix4 shadowMatrix;
+
+				Vector4 lightColour;     // rgb + intensity (or 1)
+				Vector4 lightPosRadius;  // xyz + radius
+				Vector4 cameraPos;       // xyz + 1
+				Vector4 misc;            // time / mode / flags etc.
+			};
+
+			void InitPassUBO();
+			void UpdatePassUBO(const PassDataCPU& data);
+			GLuint passUBO = 0;
+
 			struct ObjectSortState {
 				const RenderObject* object;
 				float distanceFromCamera;
@@ -90,4 +108,3 @@ namespace NCL {
 		};
 	}
 }
-

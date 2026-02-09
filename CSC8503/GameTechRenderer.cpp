@@ -1,4 +1,4 @@
-#include "GameTechRenderer.h"
+﻿#include "GameTechRenderer.h"
 #include "GameObject.h"
 #include "GameWorld.h"
 #include "RenderObject.h"
@@ -47,7 +47,7 @@ GameTechRenderer::GameTechRenderer(GameWorld& world) : OGLRenderer(*Window::GetW
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
 	glClearColor(1, 1, 1, 1);
-
+	InitPassUBO();
 	////Set up the light properties
 	//lightColour = Vector4(0.8f, 0.8f, 0.5f, 1.0f);
 	//lightRadius = 1000.0f;
@@ -87,6 +87,22 @@ GameTechRenderer::GameTechRenderer(GameWorld& world) : OGLRenderer(*Window::GetW
 GameTechRenderer::~GameTechRenderer()	{
 	glDeleteTextures(1, &shadowTex);
 	glDeleteFramebuffers(1, &shadowFBO);
+}
+
+void GameTechRenderer::InitPassUBO() {
+	glGenBuffers(1, &passUBO);
+	glBindBuffer(GL_UNIFORM_BUFFER, passUBO);
+	glBufferData(GL_UNIFORM_BUFFER, sizeof(PassDataCPU), nullptr, GL_DYNAMIC_DRAW);
+	glBindBuffer(GL_UNIFORM_BUFFER, 0);
+
+	// 固定绑定槽位 0（要与你 GLSL 里 PASS_UBO_SLOT 一致）
+	glBindBufferBase(GL_UNIFORM_BUFFER, 0, passUBO);
+}
+
+void GameTechRenderer::UpdatePassUBO(const PassDataCPU& data) {
+	glBindBuffer(GL_UNIFORM_BUFFER, passUBO);
+	glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(PassDataCPU), &data);
+	glBindBuffer(GL_UNIFORM_BUFFER, 0);
 }
 
 void GameTechRenderer::LoadSkybox() {
@@ -259,20 +275,33 @@ void GameTechRenderer::RenderShadowMapPass(std::vector<ObjectSortState>& list) {
 void GameTechRenderer::RenderSkyboxPass() {
 	glDisable(GL_CULL_FACE);
 	glDisable(GL_BLEND);
-	glDisable(GL_DEPTH_TEST);
-
-	Matrix4 viewMatrix = gameWorld.GetMainCamera().BuildViewMatrix();
-	Matrix4 projMatrix = gameWorld.GetMainCamera().BuildProjectionMatrix(hostWindow.GetScreenAspect());
+	glEnable(GL_DEPTH_TEST);
+	glDepthMask(GL_FALSE);
 
 	UseShader(*skyboxShader);
 
-	int projLocation = glGetUniformLocation(skyboxShader->GetProgramID(), "projMatrix");
-	int viewLocation = glGetUniformLocation(skyboxShader->GetProgramID(), "viewMatrix");
-	int texLocation  = glGetUniformLocation(skyboxShader->GetProgramID(), "cubeTex");
+	// 1) 填 UBO
+	Matrix4 viewMatrix = gameWorld.GetMainCamera().BuildViewMatrix();
+	Matrix4 projMatrix = gameWorld.GetMainCamera().BuildProjectionMatrix(hostWindow.GetScreenAspect());
 
-	glUniformMatrix4fv(projLocation, 1, false, (float*)&projMatrix);
-	glUniformMatrix4fv(viewLocation, 1, false, (float*)&viewMatrix);
+	PassDataCPU pass = {};
+	pass.viewMatrix = viewMatrix;
+	pass.projMatrix = projMatrix;
+	pass.viewProjMatrix = projMatrix * viewMatrix;
+	pass.shadowMatrix = shadowMatrix;
 
+	Vector3 camPos = gameWorld.GetMainCamera().GetPosition();
+	pass.cameraPos = Vector4(camPos.x, camPos.y, camPos.z, 1.0f);
+
+	Vector3 sunPos = gameWorld.GetSunPosition();
+	Vector3 sunCol = gameWorld.GetSunColour();
+	pass.lightPosRadius = Vector4(sunPos.x, sunPos.y, sunPos.z, 10000.0f);
+	pass.lightColour = Vector4(sunCol.x, sunCol.y, sunCol.z, 1.0f);
+
+	UpdatePassUBO(pass);
+
+	// 2) 绑定 cubemap sampler（这个仍然是普通 uniform）
+	int texLocation = glGetUniformLocation(skyboxShader->GetProgramID(), "cubeTex");
 	glUniform1i(texLocation, 0);
 	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_CUBE_MAP, skyboxTex);
@@ -280,9 +309,9 @@ void GameTechRenderer::RenderSkyboxPass() {
 	BindMesh(*skyboxMesh);
 	DrawBoundMesh();
 
+	glDepthMask(GL_TRUE);
 	glEnable(GL_CULL_FACE);
 	glEnable(GL_BLEND);
-	glEnable(GL_DEPTH_TEST);
 }
 
 void GameTechRenderer::RenderOpaquePass(std::vector<ObjectSortState>& list) {
@@ -360,75 +389,62 @@ void GameTechRenderer::RenderTransparentPass(std::vector<ObjectSortState>& list)
 
 	UseShader(*defaultShader);
 
-	int projLocation		= glGetUniformLocation(activeShader->GetProgramID(), "projMatrix");
-	int viewLocation		= glGetUniformLocation(activeShader->GetProgramID(), "viewMatrix");
-	int modelLocation		= glGetUniformLocation(activeShader->GetProgramID(), "modelMatrix");
-	int colourLocation		= glGetUniformLocation(activeShader->GetProgramID(), "objectColour");
-	int hasVColLocation		= glGetUniformLocation(activeShader->GetProgramID(), "hasVertexColours");
-	int hasTexLocation		= glGetUniformLocation(activeShader->GetProgramID(), "hasTexture");
+	// Per-object uniforms only
+	int modelLocation   = glGetUniformLocation(activeShader->GetProgramID(), "modelMatrix");
+	int colourLocation  = glGetUniformLocation(activeShader->GetProgramID(), "objectColour");
+	int hasVColLocation = glGetUniformLocation(activeShader->GetProgramID(), "hasVertexColours");
+	int hasTexLocation  = glGetUniformLocation(activeShader->GetProgramID(), "hasTexture");
 
-	int lightPosLocation	= glGetUniformLocation(activeShader->GetProgramID(), "sunPos");
-	int lightColourLocation = glGetUniformLocation(activeShader->GetProgramID(), "sunColour");
-	int lightRadiusLocation = glGetUniformLocation(activeShader->GetProgramID(), "sunRadius");
+	int shadowTexLocation = glGetUniformLocation(activeShader->GetProgramID(), "shadowTex");
 
-	int cameraLocation		= glGetUniformLocation(activeShader->GetProgramID(), "cameraPos");
-	int shadowTexLocation	= glGetUniformLocation(activeShader->GetProgramID(), "shadowTex");
-	int shadowLocation		= glGetUniformLocation(activeShader->GetProgramID(), "shadowMatrix");
-
+	// Global data via PassData UBO
 	Matrix4 viewMatrix = gameWorld.GetMainCamera().BuildViewMatrix();
 	Matrix4 projMatrix = gameWorld.GetMainCamera().BuildProjectionMatrix(hostWindow.GetScreenAspect());
-	glUniformMatrix4fv(projLocation, 1, false, (float*)&projMatrix);
-	glUniformMatrix4fv(viewLocation, 1, false, (float*)&viewMatrix);
+
+	PassDataCPU pass = {};
+	pass.viewMatrix     = viewMatrix;
+	pass.projMatrix     = projMatrix;
+	pass.viewProjMatrix = projMatrix * viewMatrix;
+	pass.shadowMatrix   = shadowMatrix;
 
 	Vector3 camPos = gameWorld.GetMainCamera().GetPosition();
-	glUniform3fv(cameraLocation, 1, &camPos.x);
+	pass.cameraPos = Vector4(camPos.x, camPos.y, camPos.z, 1.0f);
 
-	Vector3 sunPos		= gameWorld.GetSunPosition();
-	Vector3 sunCol		= gameWorld.GetSunColour();
-	float	sunRadius	= 10000.0f;
-	glUniform3fv(lightPosLocation, 1, (float*)&sunPos);
-	glUniform3fv(lightColourLocation, 1, (float*)&sunCol);
-	glUniform1f(lightRadiusLocation, sunRadius);
+	Vector3 sunPos = gameWorld.GetSunPosition();
+	Vector3 sunCol = gameWorld.GetSunColour();
+	pass.lightPosRadius = Vector4(sunPos.x, sunPos.y, sunPos.z, 10000.0f);
+	pass.lightColour    = Vector4(sunCol.x, sunCol.y, sunCol.z, 1.0f);
 
-	//TODO - PUT IN FUNCTION
+	UpdatePassUBO(pass);
+
+	// Shadow map texture
 	glActiveTexture(GL_TEXTURE0 + 1);
 	glBindTexture(GL_TEXTURE_2D, shadowTex);
 	glUniform1i(shadowTexLocation, 1);
 
-	for (const auto& i : list) {
-		const RenderObject* o = i.object;
+	for (const auto& s : list) {
+		const RenderObject* o = s.object;
 		OGLTexture* diffuseTex = (OGLTexture*)o->GetMaterial().diffuseTex;
 
 		if (diffuseTex) {
 			BindTextureToShader(*diffuseTex, "mainTex", 0);
 		}
+
 		Matrix4 modelMatrix = o->GetTransform().GetMatrix();
 		glUniformMatrix4fv(modelLocation, 1, false, (float*)&modelMatrix);
-
-		Matrix4 fullShadowMat = shadowMatrix * modelMatrix;
-		glUniformMatrix4fv(shadowLocation, 1, false, (float*)&fullShadowMat);
 
 		Vector4 colour = o->GetColour();
 		glUniform4fv(colourLocation, 1, &colour.x);
 
 		glUniform1i(hasVColLocation, !o->GetMesh()->GetColourData().empty());
-
 		glUniform1i(hasTexLocation, diffuseTex ? 1 : 0);
-	
-		BindMesh((OGLMesh&)*o->GetMesh());
-			
-		size_t layerCount = o->GetMesh()->GetSubMeshCount();
 
-		glCullFace(GL_FRONT);
-		for (size_t i = 0; i < layerCount; ++i) {
-			DrawBoundMesh((uint32_t)i);
-		}
-		glCullFace(GL_BACK);
-		for (size_t i = 0; i < layerCount; ++i) {
-			DrawBoundMesh((uint32_t)i);
+		BindMesh((OGLMesh&)*o->GetMesh());
+		size_t layerCount = o->GetMesh()->GetSubMeshCount();
+		for (size_t layer = 0; layer < layerCount; ++layer) {
+			DrawBoundMesh((uint32_t)layer);
 		}
 	}
-	glDisable(GL_BLEND);
 }
 
 

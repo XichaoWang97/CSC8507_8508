@@ -1,0 +1,6 @@
+#ifndef BINDING_SLOTS_GLSL
+#define BINDING_SLOTS_GLSL
+
+#define PASS_UBO_SLOT 0
+
+#endif
