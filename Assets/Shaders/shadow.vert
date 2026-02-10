@@ -1,4 +1,4 @@
-#version 400 core
+#version 430 core
 
 uniform mat4 mvpMatrix 		= mat4(1.0f);
 

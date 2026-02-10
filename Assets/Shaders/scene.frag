@@ -1,14 +1,11 @@
-#version 400 core
+#version 430 core
+#include "PassData.glsl"
 
 uniform vec4 		objectColour;
 uniform sampler2D 	mainTex;
 uniform sampler2DShadow shadowTex;
 
-uniform vec3	sunPos;
-uniform float	sunRadius;
-uniform vec3	sunColour;
-
-uniform vec3	cameraPos;
+vec3 camPos = cameraPos.xyz;
 
 uniform bool hasTexture;
 
@@ -31,10 +28,10 @@ void main(void)
 		shadow = textureProj ( shadowTex , IN . shadowProj ) * 0.5f;
 	}
 
-	vec3  incident = normalize ( sunPos - IN.worldPos );
+	vec3  incident = normalize ( lightPosRadius.xyz - IN.worldPos );
 	float lambert  = max (0.0 , dot ( incident , IN.normal )) * 0.9; 
 	
-	vec3 viewDir = normalize ( cameraPos - IN . worldPos );
+	vec3 viewDir = normalize ( cameraPos.xyz - IN . worldPos );
 	vec3 halfDir = normalize ( incident + viewDir );
 
 	float rFactor = max (0.0 , dot ( halfDir , IN.normal ));
@@ -50,9 +47,9 @@ void main(void)
 	
 	fragColor.rgb = albedo.rgb * 0.05f; //ambient
 	
-	fragColor.rgb += albedo.rgb * sunColour.rgb * lambert * shadow; //diffuse light
+	fragColor.rgb += albedo.rgb * lightColor.rgb * lambert * shadow; //diffuse light
 	
-	fragColor.rgb += sunColour.rgb * sFactor * shadow; //specular light
+	fragColor.rgb += lightColor.rgb * sFactor * shadow; //specular light
 	
 	fragColor.rgb = pow(fragColor.rgb, vec3(1.0 / 2.2f));
 	

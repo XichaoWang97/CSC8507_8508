@@ -319,42 +319,41 @@ void GameTechRenderer::RenderOpaquePass(std::vector<ObjectSortState>& list) {
 	glEnable(GL_CULL_FACE);
 	
 	UseShader(*defaultShader);
+	if (!activeShader) return;
 
-	int projLocation		= glGetUniformLocation(activeShader->GetProgramID(), "projMatrix");
-	int viewLocation		= glGetUniformLocation(activeShader->GetProgramID(), "viewMatrix");
 	int modelLocation		= glGetUniformLocation(activeShader->GetProgramID(), "modelMatrix");
 	int colourLocation		= glGetUniformLocation(activeShader->GetProgramID(), "objectColour");
 	int hasVColLocation		= glGetUniformLocation(activeShader->GetProgramID(), "hasVertexColours");
 	int hasTexLocation		= glGetUniformLocation(activeShader->GetProgramID(), "hasTexture");
-	
-	int lightPosLocation	= glGetUniformLocation(activeShader->GetProgramID(), "sunPos");
-	int lightColourLocation = glGetUniformLocation(activeShader->GetProgramID(), "sunColour");
-	int lightRadiusLocation = glGetUniformLocation(activeShader->GetProgramID(), "sunRadius");
-
-	int cameraLocation		= glGetUniformLocation(activeShader->GetProgramID(), "cameraPos");
 	int shadowTexLocation	= glGetUniformLocation(activeShader->GetProgramID(), "shadowTex");
-	int shadowLocation		= glGetUniformLocation(activeShader->GetProgramID(), "shadowMatrix");
 
 	Matrix4 viewMatrix = gameWorld.GetMainCamera().BuildViewMatrix();
 	Matrix4 projMatrix = gameWorld.GetMainCamera().BuildProjectionMatrix(hostWindow.GetScreenAspect());
-	glUniformMatrix4fv(projLocation, 1, false, (float*)&projMatrix);
-	glUniformMatrix4fv(viewLocation, 1, false, (float*)&viewMatrix);
+
+
+	PassDataCPU pass = {};
+	pass.viewMatrix = viewMatrix;
+	pass.projMatrix = projMatrix;
+	pass.viewProjMatrix = projMatrix * viewMatrix;
+	pass.shadowMatrix = shadowMatrix;
 
 	Vector3 camPos = gameWorld.GetMainCamera().GetPosition();
-	glUniform3fv(cameraLocation, 1, &camPos.x);
+	pass.cameraPos = Vector4(camPos.x, camPos.y, camPos.z, 1.0f);
 
 	Vector3 sunPos		= gameWorld.GetSunPosition();
 	Vector3 sunCol		= gameWorld.GetSunColour();
-	float	sunRadius	= 10000.0f;
-	glUniform3fv(lightPosLocation, 1, (float*)&sunPos);
-	glUniform3fv(lightColourLocation, 1, (float*)&sunCol);
-	glUniform1f(lightRadiusLocation, sunRadius);
+	pass.lightColour = Vector4(sunCol.x, sunCol.y, sunCol.z, 1.0f);
+	pass.lightPosRadius = Vector4(sunPos.x, sunPos.y, sunPos.z, 10000.0f);
 
-	//TODO - PUT IN FUNCTION
+	pass.misc = Vector4(0, 0, 0, 0);
+	UpdatePassUBO(pass);
+
+	// shadow map texture
 	glActiveTexture(GL_TEXTURE0 + 1);
 	glBindTexture(GL_TEXTURE_2D, shadowTex);
 	glUniform1i(shadowTexLocation, 1);
 
+	// Draw
 	for (const auto& i : list) {
 		const RenderObject* o = i.object;
 		OGLTexture* diffuseTex = (OGLTexture*)o->GetMaterial().diffuseTex;
@@ -364,9 +363,6 @@ void GameTechRenderer::RenderOpaquePass(std::vector<ObjectSortState>& list) {
 		}
 		Matrix4 modelMatrix = o->GetTransform().GetMatrix();
 		glUniformMatrix4fv(modelLocation, 1, false, (float*)&modelMatrix);
-
-		Matrix4 fullShadowMat = shadowMatrix * modelMatrix;
-		glUniformMatrix4fv(shadowLocation, 1, false, (float*)&fullShadowMat);
 
 		Vector4 colour = o->GetColour();
 		glUniform4fv(colourLocation, 1, &colour.x);
@@ -388,13 +384,13 @@ void GameTechRenderer::RenderTransparentPass(std::vector<ObjectSortState>& list)
 	glEnable(GL_CULL_FACE);
 
 	UseShader(*defaultShader);
+	if (!activeShader) return;
 
 	// Per-object uniforms only
 	int modelLocation   = glGetUniformLocation(activeShader->GetProgramID(), "modelMatrix");
 	int colourLocation  = glGetUniformLocation(activeShader->GetProgramID(), "objectColour");
 	int hasVColLocation = glGetUniformLocation(activeShader->GetProgramID(), "hasVertexColours");
 	int hasTexLocation  = glGetUniformLocation(activeShader->GetProgramID(), "hasTexture");
-
 	int shadowTexLocation = glGetUniformLocation(activeShader->GetProgramID(), "shadowTex");
 
 	// Global data via PassData UBO
