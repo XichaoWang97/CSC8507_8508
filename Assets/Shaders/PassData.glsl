@@ -7,7 +7,7 @@ layout(std140, binding = PASS_UBO_SLOT) uniform PassData
 {
 	mat4 viewMatrix;
 	mat4 projMatrix;
-	mat4 viewProMatrix;
+	mat4 viewProjMatrix;
 	mat4 shadowMatrix;
 
 	vec4 lightColor;

@@ -446,21 +446,25 @@ void GameTechRenderer::RenderTransparentPass(std::vector<ObjectSortState>& list)
 
 void GameTechRenderer::RenderLines() {
 	const std::vector<Debug::DebugLineEntry>& lines = Debug::GetDebugLines();
-	if (lines.empty()) {
-		return;
-	}
+	if (lines.empty()) return;
 
 	Matrix4 viewMatrix = gameWorld.GetMainCamera().BuildViewMatrix();
 	Matrix4 projMatrix = gameWorld.GetMainCamera().BuildProjectionMatrix(hostWindow.GetScreenAspect());
-	
-	Matrix4 viewProj  = projMatrix * viewMatrix;
 
 	UseShader(*debugShader);
-	int matSlot = glGetUniformLocation(debugShader->GetProgramID(), "viewProjMatrix");
+	if (!activeShader) return;
+
+	PassDataCPU pass = {};
+	pass.viewMatrix = viewMatrix;
+	pass.projMatrix = projMatrix;
+	pass.viewProjMatrix = projMatrix * viewMatrix;
+	UpdatePassUBO(pass);
+
+	//int matSlot = glGetUniformLocation(debugShader->GetProgramID(), "viewProjMatrix");
 	GLuint texSlot = glGetUniformLocation(debugShader->GetProgramID(), "useTexture");
 	glUniform1i(texSlot, 0);
 
-	glUniformMatrix4fv(matSlot, 1, false, (float*)viewProj.array);
+	//glUniformMatrix4fv(matSlot, 1, false, (float*)viewProj.array);
 
 	debugLineData.clear();
 
@@ -478,11 +482,10 @@ void GameTechRenderer::RenderLines() {
 
 void GameTechRenderer::RenderText() {
 	const std::vector<Debug::DebugStringEntry>& strings = Debug::GetDebugStrings();
-	if (strings.empty()) {
-		return;
-	}
+	if (strings.empty()) return;
 
 	UseShader(*debugShader);
+	if (!activeShader) return;
 
 	OGLTexture* t = (OGLTexture*)Debug::GetDebugFont()->GetTexture();
 
@@ -497,8 +500,9 @@ void GameTechRenderer::RenderText() {
 
 	Matrix4 proj = Matrix::Orthographic(0.0f, 100.0f, 100.0f, 0.0f, -1.0f, 1.0f);
 
-	int matSlot = glGetUniformLocation(debugShader->GetProgramID(), "viewProjMatrix");
-	glUniformMatrix4fv(matSlot, 1, false, (float*)proj.array);
+	PassDataCPU pass = {};
+	pass.viewProjMatrix = proj;
+	UpdatePassUBO(pass);
 
 	GLuint texSlot = glGetUniformLocation(debugShader->GetProgramID(), "useTexture");
 	glUniform1i(texSlot, 1);
@@ -532,15 +536,15 @@ void GameTechRenderer::RenderText() {
 
 void GameTechRenderer::RenderTextures() {
 	const std::vector<Debug::DebugTexEntry>& texEntries = Debug::GetDebugTex();
-	if (texEntries.empty()) {
-		return;
-	}
+	if (texEntries.empty()) return;
+
 	UseShader(*debugShader);
+	if (!activeShader) return;
 
 	Matrix4 proj = Matrix::Orthographic(0.0f, 100.0f, 100.0f, 0.0f, -1.0f, 1.0f);
-
-	int matSlot = glGetUniformLocation(debugShader->GetProgramID(), "viewProjMatrix");
-	glUniformMatrix4fv(matSlot, 1, false, (float*)proj.array);
+	PassDataCPU pass = {};
+	pass.viewProjMatrix = proj;
+	UpdatePassUBO(pass);
 
 	GLuint texSlot = glGetUniformLocation(debugShader->GetProgramID(), "useTexture");
 	glUniform1i(texSlot, 2);
@@ -566,8 +570,6 @@ void GameTechRenderer::RenderTextures() {
 
 		Matrix4 transform = Matrix::Translation(Vector3(tex.position.x, tex.position.y, 0)) * Matrix::Scale(Vector3(tex.scale.x, tex.scale.y, 1.0f));
 		Matrix4 finalMatrix = proj * transform;
-
-		glUniformMatrix4fv(matSlot, 1, false, (float*)finalMatrix.array);
 
 		glUniform4f(colourSlot, tex.colour.x, tex.colour.y, tex.colour.z, tex.colour.w);
 

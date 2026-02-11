@@ -1,13 +1,11 @@
-#version 400 core
+#version 430 core
+#include "PassData.glsl"
 
 layout(location = 0) in vec3 position;
 layout(location = 1) in vec4 colour;
 layout(location = 2) in vec2 texCoord;
 
-uniform mat4 viewProjMatrix = mat4(1);
-
 uniform int useColour = 0;
-
 uniform vec4 texColour = vec4(1,1,1,1);
 
 out Vertex
