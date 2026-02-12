@@ -88,8 +88,13 @@ endif()
 ################################################################################
 add_subdirectory(NCLCoreClasses)
 add_subdirectory(CSC8503CoreClasses)
+add_subdirectory(MiddleWares)
 add_subdirectory(CSC8503)
+target_link_libraries(CSC8503 PRIVATE middlewares)
+target_compile_features(CSC8503 PRIVATE cxx_std_20)
 add_subdirectory(GLTFLoader)
+
+#target_link_libraries(${PROJECT_NAME} PRIVATE middlewares)
 
 if(USE_VULKAN)
     add_subdirectory(VulkanRendering)

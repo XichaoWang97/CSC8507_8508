@@ -96,7 +96,8 @@ endif()
 ################################################################################
 # Target
 ################################################################################
-add_executable(${PROJECT_NAME}  ${ALL_FILES} "Level.cpp" "LevelRegistry.h" "LevelRegistry.cpp" "BindingSlots.h")
+add_executable(${PROJECT_NAME}  ${ALL_FILES} "Level.cpp" "LevelRegistry.h" "LevelRegistry.cpp" "BindingSlots.h" 
+"Dialogue/DialogueTypes.h" "Dialogue/DialogueDB.h" "Dialogue/DialogueRunner.h" "Dialogue/DialogueNPC.h")
 
 use_props(${PROJECT_NAME} "${CMAKE_CONFIGURATION_TYPES}" "${DEFAULT_CXX_PROPS}")
 set(ROOT_NAMESPACE CSC8503)
