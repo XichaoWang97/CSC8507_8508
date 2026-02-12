@@ -27,7 +27,7 @@ void Level::EnsureAssetsLoaded() {
 
     // Keep the same assets as MyGame used before
     cubeMesh = context.renderer->LoadMesh("cube.msh");
-    playerMesh = context.renderer->LoadMesh("cat.msh");
+    playerMesh = context.renderer->LoadMesh("Characters/Meshes/MaleGuard/Male_Guard.msh");
     defaultTex = context.renderer->LoadTexture("checkerboard.png");
 
     notexMaterial = GameTechMaterial();
