@@ -1,22 +1,15 @@
-Ver0.12(Branch NoPolarity):
+Ver1.0:
 
-Objects with different colors: Blue (North polarity), Orange (South polarity)
+Currently, the push/pull interaction with objects has been implemented. And normally, the push/pull interaction uses a raycast emitted from the front of the player. Target pre-selection (shown as a yellow line) and a lock-on function (press F) are also in place. Once locked, you can push or pull the specified object, but the lock will be cancelled automatically if it goes out of range.
 
-Anchor: Set InverseMass to 0.0. The anchor cube will not move, and you can pull yourself toward the anchor’s position.
+Files starting with "Level" are level-related files. "Level_00.cpp" is the simple test scene I've set up for now. More levels can be created later by continuing the numbering. The active level is selected in "MyGame.cpp" inside "InitWorld()" there are comments there so it should be easy to find. Feel free to modify that part to run your own levels. Besides, I think we'll eventually need a system to connect multiple completed levels together, but that can be addressed later.
 
-Player: Click LMB/RMB to temporarily change polarity.
+In "Level.h" and "Level.cpp", there are functions for spawning cubes, floors and player into the world. If anyone wants to add new objects, models, or experimental gameplay elements, you can modify those files to add them.
 
-Besides, you can see a rotating cube, which uses an OBB collider. This part is not stable, and I still haven’t managed to fix it so far. 
-If anyone has a way to fix the OBB collision, please feel free to jump in and take a look!
+Finally, the OBB collision issue is still not fully resolved. The current implementation uses AABB collision. If anyone has a stable OBB collision solution, feel free to improve or replace it.
 
-The levels are built in MyGame.cpp, and the player mechanics are implemented in the Player class.
+Ver1.1 (Feb 12):
 
-Ver0.12(Branch NoPolarity):
+Added a dialogue system and a middleware folder(With a json.hpp. From now on, we can use JSON to store data).
 
-The magnetic system has been removed and replaced with left-click/right-click push and pull mechanics. The interaction forces between the player and objects have been further refined. The system is currently undergoing parameter tuning, and the target selection feature is still under development.
-
---------------------------New-------------------------- Feb 12 Updated
-
-Add a dialogue system.
-
-Create a middlewares folder, every one can add middlewares in it.
+The rendering pipeline has been updated to use UBO/SSBO (the transition is not fully complete yet). Please note that this change will not bring any visual improvement to rendering. The current version runs stably.
