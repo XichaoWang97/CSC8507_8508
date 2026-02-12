@@ -41,6 +41,15 @@ namespace NCL {
 				Vector4 misc;            // time / mode / flags etc.
 			};
 
+			struct alignas(16) ObjectDataCPU {
+				NCL::Maths::Matrix4 modelMatrix;
+				NCL::Maths::Vector4 colour;
+				uint32_t materialID;
+				uint32_t flags;
+				uint32_t pad0;
+				uint32_t pad1;
+			};
+
 			void InitPassUBO();
 			void UpdatePassUBO(const PassDataCPU& data);
 			GLuint passUBO = 0;

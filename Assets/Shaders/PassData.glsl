@@ -1,7 +1,7 @@
 #ifndef PASS_DATA_GLSL
 #define PASS_DATA_GLSL
 
-#include "BindingSlots.glsl"
+#include "..\..\CSC8503\BindingSlots.h"
 
 layout(std140, binding = PASS_UBO_SLOT) uniform PassData
 {
@@ -14,7 +14,8 @@ layout(std140, binding = PASS_UBO_SLOT) uniform PassData
 	vec4 lightPosRadius;
 
 	vec4 cameraPos;
-	vec4 misc; // time/mode/flags
+	float time;
+	//vec4 misc; // time/mode/flags
 };
 
 #endif

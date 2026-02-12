@@ -5,7 +5,7 @@
 #include "Camera.h"
 #include "TextureLoader.h"
 #include "MshLoader.h"
-
+#include "BindingSlots.h"
 #include "Debug.h"
 
 #include "OGLRenderer.h"
@@ -48,11 +48,7 @@ GameTechRenderer::GameTechRenderer(GameWorld& world) : OGLRenderer(*Window::GetW
 
 	glClearColor(1, 1, 1, 1);
 	InitPassUBO();
-	////Set up the light properties
-	//lightColour = Vector4(0.8f, 0.8f, 0.5f, 1.0f);
-	//lightRadius = 1000.0f;
-	//lightPosition = Vector3(-200.0f, 60.0f, -200.0f);
-
+	
 	//Skybox!
 	skyboxShader = new OGLShader("skybox.vert", "skybox.frag");
 	skyboxMesh = new OGLMesh();
@@ -102,6 +98,10 @@ void GameTechRenderer::InitPassUBO() {
 void GameTechRenderer::UpdatePassUBO(const PassDataCPU& data) {
 	glBindBuffer(GL_UNIFORM_BUFFER, passUBO);
 	glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(PassDataCPU), &data);
+
+	// A3: 绑定到固定的 binding slot（用宏，不写死 0）
+	glBindBufferBase(GL_UNIFORM_BUFFER, PASS_UBO_SLOT, passUBO);
+
 	glBindBuffer(GL_UNIFORM_BUFFER, 0);
 }
 
