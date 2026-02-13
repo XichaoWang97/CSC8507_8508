@@ -1,0 +1,47 @@
+{
+  "id": "npc_tutorial",
+  "start": "n0",
+  "nodes": {
+    "n0": {
+      "speaker": "Guide",
+      "text": "Welcome!",
+      "choices": [
+        {
+          "text": "Next",
+          "next": "n1"
+        }
+      ]
+    },
+    "n1": {
+      "speaker": "Guide",
+      "text": "Do you want to learn Push/Pull?",
+      "choices": [
+        {
+          "text": "Yes",
+          "next": "n2",
+          "actions": [
+            {
+              "type": "set_flag",
+              "key": "did_tutorial",
+              "value": true
+            }
+          ]
+        },
+        {
+          "text": "No",
+          "end": true
+        }
+      ]
+    },
+    "n2": {
+      "speaker": "Guide",
+      "text": "Left mouse: Pull. Right mouse: Push.",
+      "choices": [
+        {
+          "text": "End",
+          "end": true
+        }
+      ]
+    }
+  }
+}

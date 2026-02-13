@@ -5,6 +5,8 @@
 
 #include "Vector.h"
 #include "RenderObject.h" // GameTechMaterial, Rendering::Mesh/Texture forward deps in this framework
+#include "Dialogue/DialogueNPC.h"
+#include "Dialogue/DialogueDB.h"
 
 namespace NCL {
     namespace Rendering {
@@ -47,8 +49,13 @@ namespace NCL::CSC8503 {
             const NCL::Maths::Vector3& halfDims,
             float inverseMass,
             const NCL::Maths::Vector4& colour = NCL::Maths::Vector4(0.65f, 0.65f, 0.7f, 1.0f));
+        DialogueNPC* AddDialogueNPCToWorld(const std::string& dialogueGraphId, const NCL::Maths::Vector3& position,
+            float radius, float inverseMass, const Vector4& colour, float interactRadius = 6.0f);
 
         void ClearWorld();
+        void LoadDialogue(const std::string& filepath) {
+			dialogueDB.LoadGraphFromFile(filepath);
+        }
 
     protected:
         // assets
@@ -57,8 +64,10 @@ namespace NCL::CSC8503 {
         NCL::Rendering::Mesh* cubeMesh = nullptr;
         NCL::Rendering::Mesh* playerMesh = nullptr;
         NCL::Rendering::Texture* defaultTex = nullptr;
+		NCL::Rendering::Mesh* NPCMesh = nullptr;
         GameTechMaterial notexMaterial;
 
         LevelContext context;
+		DialogueDB dialogueDB; // Dialogue data for NPCs in this level.
     };
 }

@@ -18,7 +18,7 @@ using namespace NCL::Maths;
 using namespace NCL::CSC8503;
 
 void Level::EnsureAssetsLoaded() {
-    if (cubeMesh && playerMesh) {
+    if (cubeMesh && playerMesh && NPCMesh) {
         return;
     }
     if (!context.renderer) {
@@ -28,6 +28,7 @@ void Level::EnsureAssetsLoaded() {
     // Keep the same assets as MyGame used before
     cubeMesh = context.renderer->LoadMesh("cube.msh");
     playerMesh = context.renderer->LoadMesh("Characters/Meshes/MaleGuard/Male_Guard.msh");
+    NPCMesh = context.renderer->LoadMesh("Characters/Meshes/Max/Rig_Maximilian.msh");
     defaultTex = context.renderer->LoadTexture("checkerboard.png");
 
     notexMaterial = GameTechMaterial();
@@ -44,6 +45,9 @@ void Level::ClearWorld() {
     if (context.playerOut) {
         *context.playerOut = nullptr;
     }
+    /*if (context.playerOut) {
+        *context.playerOut = nullptr;
+    }*/
 }
 
 GameObject* Level::AddFloorToWorld(const Vector3& position) {
@@ -135,3 +139,27 @@ MetalObject* Level::AddMetalCubeToWorld(const Vector3& position,
     return cube;
 }
 
+DialogueNPC* Level::AddDialogueNPCToWorld(const std::string& dialogueGraphId, const NCL::Maths::Vector3& position,
+    float radius, float inverseMass, const Vector4& colour, float interactRadius) {
+    EnsureAssetsLoaded();
+    if (!context.world) return nullptr;
+
+	DialogueNPC* npc = new DialogueNPC(dialogueGraphId, interactRadius);
+    SphereVolume* volume = new SphereVolume(radius * 0.5f);
+	npc->SetBoundingVolume(volume);
+
+    npc->GetTransform()
+        .SetScale(Vector3(radius, radius, radius))
+		.SetPosition(position);
+	npc->SetRenderObject(new RenderObject(npc->GetTransform(), NPCMesh, notexMaterial));
+	npc->GetRenderObject()->SetColour(colour);
+
+	PhysicsObject* NPCpo = new PhysicsObject(npc->GetTransform(), npc->GetBoundingVolume());
+    NPCpo->SetInverseMass(inverseMass);
+    NPCpo->InitSphereInertia();
+    NPCpo->SetElasticity(0.0f); // no bounciness
+    npc->SetPhysicsObject(NPCpo);
+
+	context.world->AddGameObject(npc);
+	return npc;
+}

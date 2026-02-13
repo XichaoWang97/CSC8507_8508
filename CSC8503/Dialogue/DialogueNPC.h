@@ -12,12 +12,8 @@ namespace NCL::CSC8503 {
 
     class DialogueNPC : public GameObject {
     public:
-        DialogueNPC(const std::string& name,
-            const std::string& dialogueGraphId,
-            float interactRadius = 6.0f)
-            : GameObject(name)
-            , graphId(dialogueGraphId)
-            , radius(interactRadius) {
+        DialogueNPC(const std::string& dialogueGraphId, float interactRadius = 6.0f, const std::string& name = "DialogueNPC")
+            : graphId(dialogueGraphId) , radius(interactRadius), GameObject(name) {
         }
 
         // 每帧调用：如果玩家在范围内且按 E，就开始对话
