@@ -2,6 +2,8 @@
 
 #include "Player.h"
 #include "MetalObject.h"
+#include "Dialogue/DialogueNPC.h" 
+
 #include <vector>
 #include <memory>
 
@@ -41,11 +43,9 @@ namespace NCL {
 
             Player* player = nullptr;
 
-            // All metal objects that can be pulled / pushed (shared with levels)
-            std::vector<MetalObject*> metalObjects;
-
-            // Current level instance
-            std::unique_ptr<Level> currentLevel;
+            std::vector<MetalObject*> metalObjects; // All metal objects that can be pulled / pushed
+			std::vector<DialogueNPC*> dialogueNPCs; // List of dialogue NPCs for interaction checks
+            std::unique_ptr<Level> currentLevel; // Current level instance
 
             // Magnet tuning (simple)
             float interactConeDot = 0.6f;   // >0.6 means roughly in front

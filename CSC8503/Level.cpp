@@ -139,6 +139,17 @@ MetalObject* Level::AddMetalCubeToWorld(const Vector3& position,
     return cube;
 }
 
+bool Level::LoadDialogue(const std::string& filepath) {
+    const bool ok = DialogueSystem::Get().LoadGraphFromFile(filepath);
+    if (!ok) {
+        std::cout << "Dialogue Failed to load: " << filepath << std::endl;
+    }
+    else {
+		std::cout << "Dialogue Loaded: " << filepath << std::endl;
+    }
+    return ok;
+}
+
 DialogueNPC* Level::AddDialogueNPCToWorld(const std::string& dialogueGraphId, const NCL::Maths::Vector3& position,
     float radius, float inverseMass, const Vector4& colour, float interactRadius) {
     EnsureAssetsLoaded();
@@ -161,5 +172,9 @@ DialogueNPC* Level::AddDialogueNPCToWorld(const std::string& dialogueGraphId, co
     npc->SetPhysicsObject(NPCpo);
 
 	context.world->AddGameObject(npc);
+
+    if (context.dialogueNPCs) {
+        context.dialogueNPCs->push_back(npc);
+    }
 	return npc;
 }

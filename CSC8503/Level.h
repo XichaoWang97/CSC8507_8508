@@ -7,6 +7,7 @@
 #include "RenderObject.h" // GameTechMaterial, Rendering::Mesh/Texture forward deps in this framework
 #include "Dialogue/DialogueNPC.h"
 #include "Dialogue/DialogueDB.h"
+#include "Dialogue/DialogueSystem.h"
 
 namespace NCL {
     namespace Rendering {
@@ -30,6 +31,7 @@ namespace NCL::CSC8503 {
 
         // Optional outputs / shared lists owned by MyGame
         std::vector<MetalObject*>* metalObjects = nullptr;
+        std::vector<DialogueNPC*>* dialogueNPCs = nullptr;
         Player** playerOut = nullptr;
     };
 
@@ -53,9 +55,8 @@ namespace NCL::CSC8503 {
             float radius, float inverseMass, const Vector4& colour, float interactRadius = 6.0f);
 
         void ClearWorld();
-        void LoadDialogue(const std::string& filepath) {
-			dialogueDB.LoadGraphFromFile(filepath);
-        }
+
+        bool LoadDialogue(const std::string& filepath);
 
     protected:
         // assets
@@ -68,6 +69,5 @@ namespace NCL::CSC8503 {
         GameTechMaterial notexMaterial;
 
         LevelContext context;
-		DialogueDB dialogueDB; // Dialogue data for NPCs in this level.
     };
 }

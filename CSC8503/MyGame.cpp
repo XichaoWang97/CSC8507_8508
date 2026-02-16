@@ -5,6 +5,9 @@
 #include "PhysicsSystem.h"
 #include "PhysicsObject.h"
 #include "LevelRegistry.h"
+#include "Dialogue/DialogueSystem.h"
+#include "Dialogue/DialogueNPC.h"
+#include "Keyboard.h" // 如果你们需要（看项目实际）
 
 #include "Window.h"
 #include "Debug.h"
@@ -51,10 +54,30 @@ void MyGame::UpdateGame(float dt) {
 
     if (!player) return;
 
+	// Dialogue interaction check (simple proximity check)
+    auto* kb = Window::GetWindow()->GetKeyboard();
+
+    const bool ePressed = kb->KeyPressed(KeyCodes::E);
+
+    const bool c1 = kb->KeyPressed(KeyCodes::NUM1);
+    const bool c2 = kb->KeyPressed(KeyCodes::NUM2);
+    const bool c3 = kb->KeyPressed(KeyCodes::NUM3);
+    const bool c4 = kb->KeyPressed(KeyCodes::NUM4);
+    const bool c5 = kb->KeyPressed(KeyCodes::NUM5);
+
+    const Vector3 playerPos = player->GetTransform().GetPosition();
+    for (auto* npc : dialogueNPCs) {
+        if (!npc) continue;
+        npc->UpdateInteract(playerPos, ePressed);
+    }
+
+    DialogueSystem::Get().Update(c1, c2, c3, c4, c5);
+	player->SetIgnoreInput(DialogueSystem::Get().IsActive()); // Disable player input when dialogue is active (simple approach)
+    // end
+
+	// GameMechanic: Pull/push interaction
     SetCameraToPlayer(player);
-
     player->Update(dt);
-
     ApplyPullPush(player);
 
     Debug::Print("LMB: Pull | RMB: Push | F: lock on object", Vector2(5, 5), Vector4(1, 1, 1, 1));
@@ -76,6 +99,7 @@ void MyGame::InitWorld() {
     world.ClearAndErase();
     physics.Clear();
     metalObjects.clear();
+    dialogueNPCs.clear();
     player = nullptr;
 
     // Build via Level (so teammates can own Level.cpp/h without touching MyGame)
@@ -90,6 +114,7 @@ void MyGame::InitWorld() {
     ctx.renderer = &renderer;
     ctx.metalObjects = &metalObjects;
     ctx.playerOut = &player;
+    ctx.dialogueNPCs = &dialogueNPCs;
 
     currentLevel->SetContext(ctx);
     currentLevel->Build();
