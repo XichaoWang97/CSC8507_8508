@@ -1,8 +1,6 @@
 #ifndef OBJECT_DATA_GLSL
 #define OBJECT_DATA_GLSL
 
-#include "..\..\CSC8503\BindingSlots.h"
-
 struct ObjectData {
     mat4 modelMatrix;
     vec4 colour;

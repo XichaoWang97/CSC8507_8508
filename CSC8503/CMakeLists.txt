@@ -97,7 +97,7 @@ endif()
 # Target
 ################################################################################
 add_executable(${PROJECT_NAME}  ${ALL_FILES} "Level.cpp" "LevelRegistry.h" "LevelRegistry.cpp" "BindingSlots.h" 
-"Dialogue/DialogueTypes.h" "Dialogue/DialogueDB.h" "Dialogue/DialogueRunner.h" "Dialogue/DialogueNPC.h" "Dialogue/DialogueSystem.h" "Dialogue/DialogueSystem.cpp")
+"Dialogue/DialogueTypes.h" "Dialogue/DialogueDB.h" "Dialogue/DialogueRunner.h" "Dialogue/DialogueNPC.h" "Dialogue/DialogueSystem.h" "Dialogue/DialogueSystem.cpp" "Assimp/ModelLoader.h" "Assimp/NCLAssimpMesh.h" "Assimp/NCLAssimpMesh.cpp")
 
 use_props(${PROJECT_NAME} "${CMAKE_CONFIGURATION_TYPES}" "${DEFAULT_CXX_PROPS}")
 set(ROOT_NAMESPACE CSC8503)
@@ -183,12 +183,22 @@ if(MSVC)
         ${DEFAULT_CXX_EXCEPTION_HANDLING};
         /Y-
     )
+    #target_link_options(${PROJECT_NAME} PRIVATE
+    #    $<$<CONFIG:Release>:
+    #        /OPT:REF;
+    #       /OPT:ICF
+    #    >
+    #)
     target_link_options(${PROJECT_NAME} PRIVATE
-        $<$<CONFIG:Release>:
-            /OPT:REF;
-            /OPT:ICF
-        >
-    )
+    $<$<CONFIG:Debug>:
+        /DEBUG:FASTLINK;
+        /INCREMENTAL:NO
+    >
+    $<$<CONFIG:Release>:
+        /OPT:REF;
+        /OPT:ICF
+    >
+)
 endif()
 
 ################################################################################
@@ -205,6 +215,9 @@ target_link_libraries(${PROJECT_NAME} LINK_PUBLIC NCLCoreClasses)
 target_link_libraries(${PROJECT_NAME} LINK_PUBLIC CSC8503CoreClasses)
 
 target_link_libraries(${PROJECT_NAME} LINK_PUBLIC GLTFLoader)
+
+# Assimp
+target_link_libraries(CSC8503 PRIVATE assimp::assimp) 
 
 if(USE_OPENGL)
 include_directories("../OpenGLRendering/")

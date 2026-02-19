@@ -3,7 +3,7 @@
 #include <unordered_map>
 
 #include "DialogueTypes.h"
-#include <nlohmann/json.hpp>
+#include <../GLTFLoader/json.hpp>
 #include <fstream>
 
 namespace NCL::CSC8503 {

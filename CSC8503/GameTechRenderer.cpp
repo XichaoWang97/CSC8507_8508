@@ -48,7 +48,8 @@ GameTechRenderer::GameTechRenderer(GameWorld& world) : OGLRenderer(*Window::GetW
 
 	glClearColor(1, 1, 1, 1);
 	InitPassUBO();
-	
+	InitObjectSSBO();
+	InitMaterialSSBO();
 	//Skybox!
 	skyboxShader = new OGLShader("skybox.vert", "skybox.frag");
 	skyboxMesh = new OGLMesh();
@@ -83,28 +84,273 @@ GameTechRenderer::GameTechRenderer(GameWorld& world) : OGLRenderer(*Window::GetW
 GameTechRenderer::~GameTechRenderer()	{
 	glDeleteTextures(1, &shadowTex);
 	glDeleteFramebuffers(1, &shadowFBO);
+
+	// release UBO / SSBO
+	if (passUBO)    glDeleteBuffers(1, &passUBO);
+	if (objectSSBO) glDeleteBuffers(1, &objectSSBO);
+	if (materialSSBO) glDeleteBuffers(1, &materialSSBO);
 }
 
+// -------- UBO / SSBO management --------
 void GameTechRenderer::InitPassUBO() {
 	glGenBuffers(1, &passUBO);
 	glBindBuffer(GL_UNIFORM_BUFFER, passUBO);
 	glBufferData(GL_UNIFORM_BUFFER, sizeof(PassDataCPU), nullptr, GL_DYNAMIC_DRAW);
 	glBindBuffer(GL_UNIFORM_BUFFER, 0);
 
-	// 固定绑定槽位 0（要与你 GLSL 里 PASS_UBO_SLOT 一致）
-	glBindBufferBase(GL_UNIFORM_BUFFER, 0, passUBO);
+	// PASS_UBO_SLOT = 0
+	glBindBufferBase(GL_UNIFORM_BUFFER, PASS_UBO_SLOT, passUBO);
 }
 
 void GameTechRenderer::UpdatePassUBO(const PassDataCPU& data) {
 	glBindBuffer(GL_UNIFORM_BUFFER, passUBO);
 	glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(PassDataCPU), &data);
-
-	// A3: 绑定到固定的 binding slot（用宏，不写死 0）
-	glBindBufferBase(GL_UNIFORM_BUFFER, PASS_UBO_SLOT, passUBO);
+	//glBindBufferBase(GL_UNIFORM_BUFFER, PASS_UBO_SLOT, passUBO);
 
 	glBindBuffer(GL_UNIFORM_BUFFER, 0);
 }
 
+void GameTechRenderer::UpdateScenePassData() {
+	Matrix4 viewMatrix = gameWorld.GetMainCamera().BuildViewMatrix();
+	Matrix4 projMatrix = gameWorld.GetMainCamera().BuildProjectionMatrix(hostWindow.GetScreenAspect());
+
+	PassDataCPU pass = {};
+	pass.viewMatrix = viewMatrix;
+	pass.projMatrix = projMatrix;
+	pass.viewProjMatrix = projMatrix * viewMatrix;
+	pass.shadowMatrix = shadowMatrix;
+
+	Vector3 camPos = gameWorld.GetMainCamera().GetPosition();
+	pass.cameraPos = Vector4(camPos.x, camPos.y, camPos.z, 1.0f);
+
+	Vector3 sunPos = gameWorld.GetSunPosition();
+	Vector3 sunCol = gameWorld.GetSunColour();
+	pass.lightColour = Vector4(sunCol.x, sunCol.y, sunCol.z, 1.0f);
+	pass.lightPosRadius = Vector4(sunPos.x, sunPos.y, sunPos.z, 10000.0f);
+
+	pass.misc = Vector4(0, 0, 0, 0); // 你以后可以塞 time 等
+
+	UpdatePassUBO(pass);
+}
+
+void GameTechRenderer::InitObjectSSBO() {
+	glGenBuffers(1, &objectSSBO);
+	glBindBuffer(GL_SHADER_STORAGE_BUFFER, objectSSBO);
+
+	const size_t initialMaxObjects = 4096; // 你可以根据需要调整这个值，或者实现一个动态扩展的机制
+	objectSSBOCapacityBytes = initialMaxObjects * sizeof(ObjectDataCPU);
+
+	glBufferData(GL_SHADER_STORAGE_BUFFER, objectSSBOCapacityBytes, nullptr, GL_DYNAMIC_DRAW);
+	glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+
+	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, OBJECT_SSBO_SLOT, objectSSBO);
+}
+
+void GameTechRenderer::UpdateObjectSSBO(const std::vector<ObjectDataCPU>& objects) {
+	objectSSBOCount = objects.size();
+	const size_t neededBytes = objects.size() * sizeof(ObjectDataCPU);
+
+	glBindBuffer(GL_SHADER_STORAGE_BUFFER, objectSSBO);
+
+	if (neededBytes > objectSSBOCapacityBytes) {
+		size_t newCap = objectSSBOCapacityBytes ? objectSSBOCapacityBytes : sizeof(ObjectDataCPU) * 256;
+		while (newCap < neededBytes) newCap *= 2;
+		objectSSBOCapacityBytes = newCap;
+		glBufferData(GL_SHADER_STORAGE_BUFFER, objectSSBOCapacityBytes, nullptr, GL_DYNAMIC_DRAW);
+	}
+
+	if (neededBytes > 0) {
+		void* dst = glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, neededBytes,
+			GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_RANGE_BIT);
+		if (dst) {
+			memcpy(dst, objects.data(), neededBytes);
+			glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+		}
+	}
+
+	glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+}
+
+void GameTechRenderer::BuildAndUploadObjectTable() {
+	frameObjects.clear();
+	frameObjects.reserve(opaqueObjects.size() + transparentObjects.size());
+
+	std::vector<MaterialDataCPU> frameMaterials;
+	frameMaterials.reserve(256);
+
+	std::unordered_map<const OGLTexture*, uint32_t> texToMat;
+	std::vector<OGLTexture*> uniqueTextures;
+	uniqueTextures.reserve(256);
+
+	auto materialIDFor = [&](OGLTexture* tex) -> uint32_t {
+		auto it = texToMat.find(tex);
+		if (it != texToMat.end()) return it->second;
+
+		const uint32_t id = (uint32_t)frameMaterials.size();
+		texToMat[tex] = id;
+
+		MaterialDataCPU m{};
+		m.flags = 0;
+		m.texIndex = 0;
+		if (tex) {
+			m.flags |= 1u; // hasTexture
+			uniqueTextures.push_back(tex);
+		}
+		frameMaterials.push_back(m);
+		return id;
+		};
+
+	auto push = [&](const std::vector<ObjectSortState>& list) {
+		for (const auto& s : list) {
+			const RenderObject* o = s.object;
+			OGLTexture* diffuseTex = (OGLTexture*)o->GetMaterial().diffuseTex;
+
+			ObjectDataCPU od{};
+			od.modelMatrix = o->GetTransform().GetMatrix();
+			od.colour = o->GetColour();
+			od.materialID = materialIDFor(diffuseTex);
+
+			od.flags = 0;
+			if (!o->GetMesh()->GetColourData().empty()) od.flags |= 2u; // hasVertexColours
+			frameObjects.push_back(od);
+		}
+		};
+
+	push(opaqueObjects);
+	push(transparentObjects);
+
+	// texture array + texIndex 回填
+	std::unordered_map<const OGLTexture*, uint32_t> layerMap;
+	BuildMainTexArray(uniqueTextures, layerMap, mainTexArrayW, mainTexArrayH);
+
+	for (auto& kv : texToMat) {
+		const OGLTexture* tex = kv.first;
+		const uint32_t matID = kv.second;
+
+		if (!tex) continue;
+
+		auto it = layerMap.find(tex);
+		if (it != layerMap.end()) {
+			frameMaterials[matID].texIndex = it->second;
+		}
+		else {
+			// 不进 array：当无贴图（你现在 C2.5 的策略）
+			frameMaterials[matID].flags &= ~1u;
+			frameMaterials[matID].texIndex = 0;
+		}
+	}
+
+	UpdateObjectSSBO(frameObjects);
+	UpdateMaterialSSBO(frameMaterials);
+}
+
+void GameTechRenderer::InitMaterialSSBO() {
+	glGenBuffers(1, &materialSSBO);
+	glBindBuffer(GL_SHADER_STORAGE_BUFFER, materialSSBO);
+
+	const size_t initialMaxMaterials = 256;
+	materialSSBOCapacityBytes = initialMaxMaterials * sizeof(MaterialDataCPU);
+
+	glBufferData(GL_SHADER_STORAGE_BUFFER, materialSSBOCapacityBytes, nullptr, GL_DYNAMIC_DRAW);
+	glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+
+	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, MATERIAL_SSBO_SLOT, materialSSBO);
+}
+
+void GameTechRenderer::UpdateMaterialSSBO(const std::vector<MaterialDataCPU>& materials) {
+	materialSSBOCount = materials.size();
+	const size_t neededBytes = materials.size() * sizeof(MaterialDataCPU);
+
+	glBindBuffer(GL_SHADER_STORAGE_BUFFER, materialSSBO);
+
+	if (neededBytes > materialSSBOCapacityBytes) {
+		size_t newCap = materialSSBOCapacityBytes ? materialSSBOCapacityBytes : sizeof(MaterialDataCPU) * 64;
+		while (newCap < neededBytes) newCap *= 2;
+		materialSSBOCapacityBytes = newCap;
+		glBufferData(GL_SHADER_STORAGE_BUFFER, materialSSBOCapacityBytes, nullptr, GL_DYNAMIC_DRAW);
+	}
+
+	if (neededBytes > 0) {
+		void* dst = glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, neededBytes,
+			GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_RANGE_BIT);
+		if (dst) {
+			memcpy(dst, materials.data(), neededBytes);
+			glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+		}
+	}
+
+	glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+}
+
+void GameTechRenderer::BuildMainTexArray(const std::vector<OGLTexture*>& textures,
+	std::unordered_map<const OGLTexture*, uint32_t>& outLayerMap, uint32_t& outW, uint32_t& outH) {
+	outLayerMap.clear();
+	outW = outH = 0;
+	if (textures.empty()) return;
+
+	// 以第一张作为基准尺寸
+	glBindTexture(GL_TEXTURE_2D, textures[0]->GetObjectID());
+	int w = 0, h = 0;
+	glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &w);
+	glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &h);
+	outW = (uint32_t)w;
+	outH = (uint32_t)h;
+
+	const uint32_t layers = (uint32_t)textures.size();
+
+	if (!mainTexArray) glGenTextures(1, &mainTexArray);
+	glBindTexture(GL_TEXTURE_2D_ARRAY, mainTexArray);
+
+	glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_REPEAT);
+	glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_REPEAT);
+
+	const bool needRealloc =
+		(mainTexArrayW != outW) || (mainTexArrayH != outH) || (mainTexArrayLayers != layers);
+
+	if (needRealloc) {
+		glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGBA8,
+			(GLsizei)outW, (GLsizei)outH, (GLsizei)layers,
+			0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+
+		mainTexArrayW = outW;
+		mainTexArrayH = outH;
+		mainTexArrayLayers = layers;
+	}
+
+	std::vector<unsigned char> pixels((size_t)outW * (size_t)outH * 4);
+
+	for (uint32_t i = 0; i < layers; ++i) {
+		const OGLTexture* t = textures[i];
+		GLuint id = t->GetObjectID();
+
+		glBindTexture(GL_TEXTURE_2D, id);
+
+		int tw = 0, th = 0;
+		glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &tw);
+		glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &th);
+
+		if ((uint32_t)tw != outW || (uint32_t)th != outH) {
+			continue; // 尺寸不一致：不给 layer
+		}
+
+		glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+
+		glBindTexture(GL_TEXTURE_2D_ARRAY, mainTexArray);
+		glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0,
+			0, 0, (GLint)i,
+			(GLsizei)outW, (GLsizei)outH, 1,
+			GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+
+		outLayerMap[t] = i;
+	}
+
+	glBindTexture(GL_TEXTURE_2D, 0);
+	glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
+}
+
+// O(∩_∩)O--- Render Start Here ---O(∩_∩)O
 void GameTechRenderer::LoadSkybox() {
 	std::string filenames[6] = {
 		"/Cubemap/skyrender0004.png",
@@ -166,6 +412,10 @@ void GameTechRenderer::RenderFrame() {
 		OGLDebugScope scope("Shadow map pass");
 		RenderShadowMapPass(opaqueObjects);
 	}
+
+	BuildAndUploadObjectTable(); // SSBO
+	UpdateScenePassData(); // UBO
+
 	{
 		OGLDebugScope scope("Skybox pass");
 		RenderSkyboxPass();
@@ -280,26 +530,6 @@ void GameTechRenderer::RenderSkyboxPass() {
 
 	UseShader(*skyboxShader);
 
-	// 1) 填 UBO
-	Matrix4 viewMatrix = gameWorld.GetMainCamera().BuildViewMatrix();
-	Matrix4 projMatrix = gameWorld.GetMainCamera().BuildProjectionMatrix(hostWindow.GetScreenAspect());
-
-	PassDataCPU pass = {};
-	pass.viewMatrix = viewMatrix;
-	pass.projMatrix = projMatrix;
-	pass.viewProjMatrix = projMatrix * viewMatrix;
-	pass.shadowMatrix = shadowMatrix;
-
-	Vector3 camPos = gameWorld.GetMainCamera().GetPosition();
-	pass.cameraPos = Vector4(camPos.x, camPos.y, camPos.z, 1.0f);
-
-	Vector3 sunPos = gameWorld.GetSunPosition();
-	Vector3 sunCol = gameWorld.GetSunColour();
-	pass.lightPosRadius = Vector4(sunPos.x, sunPos.y, sunPos.z, 10000.0f);
-	pass.lightColour = Vector4(sunCol.x, sunCol.y, sunCol.z, 1.0f);
-
-	UpdatePassUBO(pass);
-
 	// 2) 绑定 cubemap sampler（这个仍然是普通 uniform）
 	int texLocation = glGetUniformLocation(skyboxShader->GetProgramID(), "cubeTex");
 	glUniform1i(texLocation, 0);
@@ -317,65 +547,59 @@ void GameTechRenderer::RenderSkyboxPass() {
 void GameTechRenderer::RenderOpaquePass(std::vector<ObjectSortState>& list) {
 	glDisable(GL_BLEND);
 	glEnable(GL_CULL_FACE);
-	
+
 	UseShader(*defaultShader);
 	if (!activeShader) return;
 
-	int modelLocation		= glGetUniformLocation(activeShader->GetProgramID(), "modelMatrix");
-	int colourLocation		= glGetUniformLocation(activeShader->GetProgramID(), "objectColour");
-	int hasVColLocation		= glGetUniformLocation(activeShader->GetProgramID(), "hasVertexColours");
-	int hasTexLocation		= glGetUniformLocation(activeShader->GetProgramID(), "hasTexture");
-	int shadowTexLocation	= glGetUniformLocation(activeShader->GetProgramID(), "shadowTex");
-
-	Matrix4 viewMatrix = gameWorld.GetMainCamera().BuildViewMatrix();
-	Matrix4 projMatrix = gameWorld.GetMainCamera().BuildProjectionMatrix(hostWindow.GetScreenAspect());
-
-
-	PassDataCPU pass = {};
-	pass.viewMatrix = viewMatrix;
-	pass.projMatrix = projMatrix;
-	pass.viewProjMatrix = projMatrix * viewMatrix;
-	pass.shadowMatrix = shadowMatrix;
-
-	Vector3 camPos = gameWorld.GetMainCamera().GetPosition();
-	pass.cameraPos = Vector4(camPos.x, camPos.y, camPos.z, 1.0f);
-
-	Vector3 sunPos		= gameWorld.GetSunPosition();
-	Vector3 sunCol		= gameWorld.GetSunColour();
-	pass.lightColour = Vector4(sunCol.x, sunCol.y, sunCol.z, 1.0f);
-	pass.lightPosRadius = Vector4(sunPos.x, sunPos.y, sunPos.z, 10000.0f);
-
-	pass.misc = Vector4(0, 0, 0, 0);
-	UpdatePassUBO(pass);
-
-	// shadow map texture
+	// shadow map
+	int shadowTexLocation = glGetUniformLocation(activeShader->GetProgramID(), "shadowTex");
 	glActiveTexture(GL_TEXTURE0 + 1);
 	glBindTexture(GL_TEXTURE_2D, shadowTex);
 	glUniform1i(shadowTexLocation, 1);
 
-	// Draw
-	for (const auto& i : list) {
-		const RenderObject* o = i.object;
-		OGLTexture* diffuseTex = (OGLTexture*)o->GetMaterial().diffuseTex;
+	// bind texture array once
+	int arrLoc = glGetUniformLocation(activeShader->GetProgramID(), "mainTexArray");
+	if (arrLoc >= 0) glUniform1i(arrLoc, 2);
+	glActiveTexture(GL_TEXTURE0 + 2);
+	glBindTexture(GL_TEXTURE_2D_ARRAY, mainTexArray);
 
-		if (diffuseTex) {
-			BindTextureToShader(*diffuseTex, "mainTex", 0);
+	// ---- Instancing base ----
+	const uint32_t base = 0; // opaque 在 objects[] 的起始
+	int baseLoc = glGetUniformLocation(activeShader->GetProgramID(), "baseObjectIndex");
+
+	// ---- Draw grouped by (mesh + diffuseTex) ----
+	for (size_t i = 0; i < list.size(); ) {
+		const RenderObject* o0 = list[i].object;
+		OGLMesh* mesh0 = (OGLMesh*)o0->GetMesh();
+
+		// 关键：用 frameObjects 里的 materialID 当分组依据
+		const uint32_t mat0 = frameObjects[base + (uint32_t)i].materialID;
+
+		size_t j = i + 1;
+		for (; j < list.size(); ++j) {
+			const RenderObject* oj = list[j].object;
+			if (oj->GetMesh() != mesh0) break;
+
+			const uint32_t matj = frameObjects[base + (uint32_t)j].materialID;
+			if (matj != mat0) break;
 		}
-		Matrix4 modelMatrix = o->GetTransform().GetMatrix();
-		glUniformMatrix4fv(modelLocation, 1, false, (float*)&modelMatrix);
 
-		Vector4 colour = o->GetColour();
-		glUniform4fv(colourLocation, 1, &colour.x);
+		const int instanceCount = (int)(j - i);
 
-		glUniform1i(hasVColLocation, !o->GetMesh()->GetColourData().empty());
+		glUniform1ui(baseLoc, base + (uint32_t)i);
 
-		glUniform1i(hasTexLocation, diffuseTex ? 1 : 0);
-
-		BindMesh((OGLMesh&)*o->GetMesh());
-		size_t layerCount = o->GetMesh()->GetSubMeshCount();
-		for (size_t i = 0; i < layerCount; ++i) {
-			DrawBoundMesh((uint32_t)i);
+		BindMesh(*mesh0);
+		const size_t subCount = mesh0->GetSubMeshCount();
+		if (subCount == 0) {
+			DrawBoundMesh(0, instanceCount);
 		}
+		else {
+			for (size_t s = 0; s < subCount; ++s) {
+				DrawBoundMesh((int)s, instanceCount);
+			}
+		}
+
+		i = j;
 	}
 }
 
@@ -385,64 +609,58 @@ void GameTechRenderer::RenderTransparentPass(std::vector<ObjectSortState>& list)
 
 	UseShader(*defaultShader);
 	if (!activeShader) return;
-
-	// Per-object uniforms only
-	int modelLocation   = glGetUniformLocation(activeShader->GetProgramID(), "modelMatrix");
-	int colourLocation  = glGetUniformLocation(activeShader->GetProgramID(), "objectColour");
-	int hasVColLocation = glGetUniformLocation(activeShader->GetProgramID(), "hasVertexColours");
-	int hasTexLocation  = glGetUniformLocation(activeShader->GetProgramID(), "hasTexture");
+	
+	// shadow map
 	int shadowTexLocation = glGetUniformLocation(activeShader->GetProgramID(), "shadowTex");
-
-	// Global data via PassData UBO
-	Matrix4 viewMatrix = gameWorld.GetMainCamera().BuildViewMatrix();
-	Matrix4 projMatrix = gameWorld.GetMainCamera().BuildProjectionMatrix(hostWindow.GetScreenAspect());
-
-	PassDataCPU pass = {};
-	pass.viewMatrix     = viewMatrix;
-	pass.projMatrix     = projMatrix;
-	pass.viewProjMatrix = projMatrix * viewMatrix;
-	pass.shadowMatrix   = shadowMatrix;
-
-	Vector3 camPos = gameWorld.GetMainCamera().GetPosition();
-	pass.cameraPos = Vector4(camPos.x, camPos.y, camPos.z, 1.0f);
-
-	Vector3 sunPos = gameWorld.GetSunPosition();
-	Vector3 sunCol = gameWorld.GetSunColour();
-	pass.lightPosRadius = Vector4(sunPos.x, sunPos.y, sunPos.z, 10000.0f);
-	pass.lightColour    = Vector4(sunCol.x, sunCol.y, sunCol.z, 1.0f);
-
-	UpdatePassUBO(pass);
-
-	// Shadow map texture
 	glActiveTexture(GL_TEXTURE0 + 1);
 	glBindTexture(GL_TEXTURE_2D, shadowTex);
 	glUniform1i(shadowTexLocation, 1);
 
-	for (const auto& s : list) {
-		const RenderObject* o = s.object;
-		OGLTexture* diffuseTex = (OGLTexture*)o->GetMaterial().diffuseTex;
+	// bind texture array once
+	int arrLoc = glGetUniformLocation(activeShader->GetProgramID(), "mainTexArray");
+	if (arrLoc >= 0) glUniform1i(arrLoc, 2);
+	glActiveTexture(GL_TEXTURE0 + 2);
+	glBindTexture(GL_TEXTURE_2D_ARRAY, mainTexArray);
 
-		if (diffuseTex) {
-			BindTextureToShader(*diffuseTex, "mainTex", 0);
+	// ---- Instancing base ----
+	const uint32_t base = (uint32_t)opaqueObjects.size(); // transparent 在 objects[] 的起始
+	int baseLoc = glGetUniformLocation(activeShader->GetProgramID(), "baseObjectIndex");
+
+	// ---- Draw grouped by (mesh + diffuseTex) ----
+	for (size_t i = 0; i < list.size(); ) {
+		const RenderObject* o0 = list[i].object;
+		OGLMesh* mesh0 = (OGLMesh*)o0->GetMesh();
+
+		// 关键：用 frameObjects 里的 materialID 当分组依据
+		const uint32_t mat0 = frameObjects[base + (uint32_t)i].materialID;
+
+		size_t j = i + 1;
+		for (; j < list.size(); ++j) {
+			const RenderObject* oj = list[j].object;
+			if (oj->GetMesh() != mesh0) break;
+
+			const uint32_t matj = frameObjects[base + (uint32_t)j].materialID;
+			if (matj != mat0) break;
 		}
 
-		Matrix4 modelMatrix = o->GetTransform().GetMatrix();
-		glUniformMatrix4fv(modelLocation, 1, false, (float*)&modelMatrix);
+		const int instanceCount = (int)(j - i);
 
-		Vector4 colour = o->GetColour();
-		glUniform4fv(colourLocation, 1, &colour.x);
+		glUniform1ui(baseLoc, base + (uint32_t)i);
 
-		glUniform1i(hasVColLocation, !o->GetMesh()->GetColourData().empty());
-		glUniform1i(hasTexLocation, diffuseTex ? 1 : 0);
-
-		BindMesh((OGLMesh&)*o->GetMesh());
-		size_t layerCount = o->GetMesh()->GetSubMeshCount();
-		for (size_t layer = 0; layer < layerCount; ++layer) {
-			DrawBoundMesh((uint32_t)layer);
+		BindMesh(*mesh0);
+		const size_t subCount = mesh0->GetSubMeshCount();
+		if (subCount == 0) {
+			DrawBoundMesh(0, instanceCount);
 		}
+		else {
+			for (size_t s = 0; s < subCount; ++s) {
+				DrawBoundMesh((int)s, instanceCount);
+			}
+		}
+
+		i = j;
 	}
 }
-
 
 void GameTechRenderer::RenderLines() {
 	const std::vector<Debug::DebugLineEntry>& lines = Debug::GetDebugLines();

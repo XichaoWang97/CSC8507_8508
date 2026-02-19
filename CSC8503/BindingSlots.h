@@ -1,5 +1,3 @@
-#pragma once
-
 // UBO binding points
 #define PASS_UBO_SLOT        0
 

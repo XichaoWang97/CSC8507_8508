@@ -13,6 +13,9 @@
 #include "PhysicsObject.h"
 #include "RenderObject.h"
 
+#include "Assimp/ModelLoader.h"
+#include "Assimp/NCLAssimpMesh.h"
+
 using namespace NCL;
 using namespace NCL::Maths;
 using namespace NCL::CSC8503;
@@ -28,7 +31,8 @@ void Level::EnsureAssetsLoaded() {
     // Keep the same assets as MyGame used before
     cubeMesh = context.renderer->LoadMesh("cube.msh");
     playerMesh = context.renderer->LoadMesh("Characters/Meshes/MaleGuard/Male_Guard.msh");
-    NPCMesh = context.renderer->LoadMesh("Characters/Meshes/Max/Rig_Maximilian.msh");
+    //NPCMesh = context.renderer->LoadMesh("Characters/Meshes/Max/Rig_Maximilian.msh");
+    NPCMesh = NCL::Assets::LoadNCLMeshFromAssimp(*context.renderer, "Adelie_Tomorin/Adelie_Tomori.fbx");
     defaultTex = context.renderer->LoadTexture("checkerboard.png");
 
     notexMaterial = GameTechMaterial();
@@ -38,7 +42,7 @@ void Level::ClearWorld() {
     if (!context.world) return;
 
     // MyGame already calls ClearAndErase + physics.Clear before Build()
-    // This is here as an optional helper if a level wants to rebuild itself.
+    // This is here as an optional helper if a level wants to rebuild itself
     if (context.metalObjects) {
         context.metalObjects->clear();
     }
